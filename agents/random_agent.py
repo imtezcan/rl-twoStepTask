@@ -10,7 +10,7 @@ class RandomAgent:
         self.alpha = alpha
         self.gamma = gamma
 
-    def policy(self, state):
+    def policy(self, state, method=None):
         return np.random.choice(self.action_space)
 
     def update_q_table_sarsa(self, state, action, reward, next_state, terminal):
@@ -32,7 +32,7 @@ class RandomAgent:
         return self.q_table
 
     def update_beliefs(self, state, action, reward, next_state, terminal):
-        self.update_q_table_sarsa(self, state, action, reward, next_state, terminal)
+        self.update_q_table_sarsa(state, action, reward, next_state, terminal)
 
     def reset(self):
         pass
