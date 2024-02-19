@@ -33,8 +33,8 @@ def simulate(agent_type='random', trials=200, **kwargs):
         # only the relevant transition probabilities should be non-zero, all others should be zero
         print("transition model for relevant states-action:\n",
               agent.transition_model[0])
-        print("transition model for other states-actions:\n",
-              agent.transition_model[1:])
+        # print("transition model for other states-actions:\n",
+        #       agent.transition_model[1:])
 
     # convert the data to a dataframe
     task_df = pd.DataFrame.from_dict(task_data, orient='index')

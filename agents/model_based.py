@@ -52,14 +52,28 @@ class AgentModelBased:
         #      - at least insure no 0 probabilities for stage 1 to stage 2 transitions
         if terminal:
             return
+        
         # Increment the count for the observed transition
         self.transition_counts[current_state, action, next_state] += 1
-
         # Normalize the transition probabilities for the current state-action pair
         total_transitions = self.transition_counts[current_state, action, :].sum()
+
+        # incremental update
         self.transition_model[current_state, action, :] = self.transition_counts[
                                                           current_state, action,
                                                           :] / total_transitions
+        
+                
+        # TODO integrate high-low update below
+        # # high-low update
+        # p_high = 0.7
+        # # self.transition_model[current_state, action, 0] = 0
+        # # what state got vitited more sofar
+        # most_visited_state = self.transition_counts[current_state, action, 1] >= total_transitions / 2  
+        # most_visited_state = int(most_visited_state)
+        # self.transition_model[current_state, action, 1:][1-most_visited_state] = p_high
+        # self.transition_model[current_state, action, 1:][most_visited_state] = 1 - p_high  
+
 
     def update_q_table(self, state, action, reward, next_state, terminal):
         # Update Q-table using the transition model
