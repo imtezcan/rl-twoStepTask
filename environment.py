@@ -32,19 +32,19 @@ class TwoStepEnv:
         # 0(state 0) -> [0 (left), 0(right)]
         # 1(state 1) -> [p1 (left), p2(right)]
         # 2(state 2) -> [p3 (left), p4(right)]
-        p1 = np.random.uniform(self.min_reward_prob, self.max_reward_prob)
-        p2 = np.random.uniform(self.min_reward_prob, self.max_reward_prob)
-        p3 = np.random.uniform(self.min_reward_prob, self.max_reward_prob)
-        p4 = np.random.uniform(self.min_reward_prob, self.max_reward_prob)
-        # p1 = 0.75
-        # p2 = 0.75
-        # p3 = 0.25
-        # p4 = 0.25
+        p_1_0 = np.random.uniform(self.min_reward_prob, self.max_reward_prob)
+        p_1_1 = np.random.uniform(self.min_reward_prob, self.max_reward_prob)
+        p_2_0 = np.random.uniform(self.min_reward_prob, self.max_reward_prob)
+        p_2_1 = np.random.uniform(self.min_reward_prob, self.max_reward_prob)
+        # p_1_0 = 0.75
+        # p_1_1 = 0.75
+        # p_2_0 = 0.25
+        # p_2_1 = 0.25
 
         self.reward_prob_matrix = np.array(
             [[0, 0],  # first stage (state 0) for both actions
-             [p1, p2],  # second stage (state 1) for both actions
-             [p3, p4]])  # second stage (state 2) for both actions
+             [p_1_0, p_1_1],  # second stage (state 1) for both actions
+             [p_2_0, p_2_1]])  # second stage (state 2) for both actions
 
         # 1 -> fixed reward prob.
         # 0 -> reward prob. can be changed a long the trials
@@ -74,7 +74,6 @@ class TwoStepEnv:
             self.info["common_transition"] = self.is_common_state(self.state, action)
             self.info["state_transition_to"] = self.state
             self.info["stepOneChoice"] = action
-            # self.info["reward_probabilities_stage_1"] = self.reward_prob_matrix.flatten()
 
         # if in stage 2
         elif self.state in [1, 2]:
@@ -82,8 +81,8 @@ class TwoStepEnv:
             self.terminal = True
             self.info["reward"] = reward > 0
             self.info["stepTwoChoice"] = action
-            # self.info["reward_probabilities"] = self.reward_prob_matrix.flatten()
-            self.info["reward_probabilities"] = self.reward_prob_matrix.flatten()
+            # [2:] -> take the reward probabilities for the second stage only
+            self.info["rewardProbabilities"] = self.reward_prob_matrix.flatten()[2:]
 
 
         else:

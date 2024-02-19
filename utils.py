@@ -5,6 +5,7 @@ import pandas as pd
 import os
 import matplotlib.pyplot as plt
 import seaborn as sns
+from IPython.display import display
 
 
 def random_walk_gaussian(prob, sd, min_prob=0, max_prob=1):
@@ -25,29 +26,30 @@ def load_latest_simulated_data(agent_type):
     return task_df
 
 
-def calculate_stay_probability(data: pd.DataFrame, human: bool = False) -> pd.DataFrame:
+def calculate_stay_probability(data: pd.DataFrame) -> pd.DataFrame:
     # get a copy of the data
     tmp_df = data.copy()
 
-    # flag for the repeated action (stage 1) in the following trial
-    tmp_df['repeated_action_stage_1'] = tmp_df['stepOneChoice'].shift(1) == tmp_df[
+    # flag for the repeated action (stage 1), same action as the previous trial
+    tmp_df['repeated_stepOneAction'] = tmp_df['stepOneChoice'].shift(1) == tmp_df[
         'stepOneChoice']
-
-    if human:
-        tmp_df['common_transition'] = np.where(tmp_df['stepOneChoice'] == 0,
-                                               tmp_df['isHighProbOne'],
-                                               tmp_df['isHighProbTwo'])
+    
+    # flag for the repeated action (stage 1), same action as the next trial (to calculate the stay probability)
+    tmp_df['repeated_stepOneAction_next'] = tmp_df['repeated_stepOneAction'].shift(-1)
+    
+    # discard last trial (no next trial to compare with)
+    tmp_df = tmp_df.iloc[:-1]
 
     # stay probabilities based on conditions
     # 2 factors:
     #       rewarded trail ( whether the reward in stage 2 is greater than )
     #       common_transition ( whether the transition from stage 1 to stage 2 is common or rare)
     results = tmp_df.groupby(['reward', 'common_transition'])[
-        'repeated_action_stage_1'].mean().reset_index()
+        'repeated_stepOneAction_next'].mean().reset_index()
 
     # rename columns for clarity
     results.rename(
-        columns={'repeated_action_stage_1': 'Stay Probability', 'reward': 'Rewarded',
+        columns={'repeated_stepOneAction_next': 'Stay Probability', 'reward': 'Rewarded',
                  'common_transition': 'Common'}, inplace=True)
 
     conditions = {
@@ -63,10 +65,10 @@ def calculate_stay_probability(data: pd.DataFrame, human: bool = False) -> pd.Da
     results['Stay Probability'] = results['Stay Probability'].apply(
         lambda x: np.round(x, 3))
 
-    return results
+    return results, tmp_df
 
 
-def plot_stay_probability(data):
+def plot_stay_probability(data, name=""):
     df = data.copy()
     # Convert 'Rewarded' to a string type for clear plotting
     df['Rewarded'] = df['Rewarded'].map({True: 'Rewarded', False: 'Unrewarded'})
@@ -78,6 +80,7 @@ def plot_stay_probability(data):
     sns.set_style("whitegrid")
     fig, ax = plt.subplots(figsize=(10, 6))
 
+    fig.suptitle(name)
     # Create the bar plot
     bar = sns.barplot(x='Rewarded', y='Stay Probability', hue='Common',
                       data=df, ax=ax,
@@ -107,6 +110,76 @@ def plot_stay_probability(data):
 
     # Show the plot
     plt.show()
+
+def preprocess_human_data(data_df: pd.DataFrame) -> pd.DataFrame:
+    data = data_df.copy()
+    # infer common transition from the action taken in stage 1 and isHighProbOne/Two
+    data['common_transition'] = np.where(data['stepOneChoice'] == 0,
+                                            data['isHighProbOne'],
+                                            data['isHighProbTwo'])
+
+    # infer the transition to stage 2 state from the action taken in stage 1 and isHighProbOne/Two
+    # update the state_transition_to value only if condition is met, else keep it as it is
+    data['state_transition_to'] = np.where((data['stepOneChoice'] == 0) & (data['isHighProbOne'] == True),
+                                        1,
+                                        np.nan)
+
+    data['state_transition_to'] = np.where((data['stepOneChoice'] == 0) & (data['isHighProbOne'] == False),
+                                        2,
+                                        data['state_transition_to'])
+
+    data['state_transition_to'] = np.where((data['stepOneChoice'] == 1) & (data['isHighProbTwo'] == True),
+                                        2,
+                                        data['state_transition_to']) 
+
+    data['state_transition_to'] = np.where((data['stepOneChoice'] == 1) & (data['isHighProbTwo'] == False),
+                                        1,
+                                        data['state_transition_to'])
+    # convert to integers
+    data['state_transition_to'] = data['state_transition_to'].astype(int)
+
+    # convert the rewardProbabilities to a list
+    data['rewardProbabilities'] = data['rewardProbabilities'].apply(
+        lambda x: np.array([float(i) for i in x.strip('[]').replace(',', ' ').split()]))
+    
+    # convert stepTwoChoice from range 0-3 to 0-1
+    data['stepTwoChoice'] = data['stepTwoChoice'] % 2
+
+    return data
+
+
+def print_simple_statistics(data: pd.DataFrame, full=False):
+    # print some statistics 
+    # print_simple_statistics(task_df)
+    task_df = data.copy()
+    print("common transitions percentage:", np.mean(task_df["common_transition"])*100, "%")
+    print("rewarded trails percentage:", np.mean(task_df["reward"] > 0)*100, "%")
+
+    if full:
+        print("transition percentage from state 0 action 0 to state 1:", np.mean(task_df[task_df["stepOneChoice"] == 0]["state_transition_to"] == 1)*100, "%")
+        print("transition percentage from state 0 action 1 to state 2:", np.mean(task_df[task_df["stepOneChoice"] == 1]["state_transition_to"] == 2)*100, "%")
+        # get the counts of state transitions and action in stage 1
+        counts_stage_2_action_1 = pd.DataFrame({
+            'State Counts': task_df['state_transition_to'].value_counts(),
+            'Action Stage 1 Counts': task_df['stepOneChoice'].value_counts()
+        })
+        display(counts_stage_2_action_1)
+
+        mean_reward_stage_2 = task_df.groupby('state_transition_to')['reward'].mean().reset_index()
+        mean_reward_stage_2.columns = ['state_transition_to', 'mean_reward_stage_2']
+        display(mean_reward_stage_2)
+
+        # get the reward probability distributions for the final stage (2)
+        def index_reward_probabilities(row):
+            try:
+                return row['rewardProbabilities'][row['state_transition_to'] + row['stepTwoChoice']]
+            except:
+                print(row)
+
+        task_df_tmp = task_df.copy()
+        task_df_tmp['mean_reward_prob_of_chosen_action_2'] = task_df.apply(index_reward_probabilities, axis=1)
+        reward_probabilities = task_df_tmp.groupby(['state_transition_to', 'stepTwoChoice'])['mean_reward_prob_of_chosen_action_2'].mean().reset_index()
+        display(reward_probabilities)
 
 
 if __name__ == "__main__":
