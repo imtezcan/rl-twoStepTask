@@ -1,8 +1,7 @@
-# simulate data
-# (for now from random agent, as test the environment and task implementation)
 import numpy as np
 import pandas as pd
 import os
+from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
 from IPython.display import display
@@ -24,6 +23,15 @@ def load_latest_simulated_data(agent_type):
     print("Loading data from", filename)
     task_df = pd.read_csv(filename)
     return task_df
+
+def save_simulated_data(task_df: pd.DataFrame, agent_type: str):
+    # save the data to a csv file
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    file_path = os.path.join("data", "simulated", agent_type, timestamp)
+    # Create folder if it does not exist
+    os.makedirs(file_path, exist_ok=True)
+    filename = os.path.join(file_path, "simulated_data.csv")
+    task_df.to_csv(filename, index=False)
 
 
 def calculate_stay_probability(data: pd.DataFrame) -> pd.DataFrame:
@@ -68,7 +76,7 @@ def calculate_stay_probability(data: pd.DataFrame) -> pd.DataFrame:
     return results, tmp_df
 
 
-def plot_stay_probability(data, name=""):
+def plot_stay_probability(data, title=""):
     df = data.copy()
     # Convert 'Rewarded' to a string type for clear plotting
     df['Rewarded'] = df['Rewarded'].map({True: 'Rewarded', False: 'Unrewarded'})
@@ -78,9 +86,10 @@ def plot_stay_probability(data, name=""):
                                                                      'Stay Probability'].min() - 0.1
 
     sns.set_style("whitegrid")
-    fig, ax = plt.subplots(figsize=(10, 6))
 
-    fig.suptitle(name)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    fig.suptitle(title)
+
     # Create the bar plot
     bar = sns.barplot(x='Rewarded', y='Stay Probability', hue='Common',
                       data=df, ax=ax,
@@ -95,7 +104,7 @@ def plot_stay_probability(data, name=""):
     ax.set_title('Stay Probability by Reward and Transition Type', fontsize=20)
 
     # Set the size of the legend and the title of the legend
-    ax.legend(title='Transition', title_fontsize='13', fontsize='12')
+    ax.legend(title_fontsize='13', fontsize='12')
 
     # Set the size of the x and y ticks labels
     ax.tick_params(labelsize=12)
@@ -111,6 +120,66 @@ def plot_stay_probability(data, name=""):
     # Show the plot
     plt.show()
 
+def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]=None):
+    sns.set_style("whitegrid")
+
+    n_plots = len(dfs)
+    fig, axes = plt.subplots(nrows=1, ncols=n_plots, figsize=(10+2*n_plots, 6+0.5*n_plots),
+                             sharey=True)
+    if n_plots == 1:
+        axes = [axes]
+
+    fig.suptitle(title)
+
+    if labels is None:
+        labels = [f"Plot {i}" for i in range(len(dfs))]
+    if len(labels) < len(dfs):
+        labels = labels + [f"Plot {i}" for i in range(len(dfs) - len(labels))]
+    
+    min_stay_prob = np.min([data['Stay Probability'].min() for data in dfs])
+    y_limit_min = 0.5 if min_stay_prob > 0.5 else min_stay_prob - 0.1
+
+    for i, (ax, data) in enumerate((zip(axes, dfs))):
+        df = data.copy()
+        # Convert 'Rewarded' to a string type for clear plotting
+        df['Rewarded'] = df['Rewarded'].map({True: 'Rewarded', False: 'Unrewarded'})
+        df['Common'] = df['Common'].map({True: 'Common', False: 'Rare'})
+        # Create the bar plot
+        bar = sns.barplot(x='Rewarded', y='Stay Probability', hue='Common',
+                        data=df, ax=ax,
+                        order=['Rewarded', 'Unrewarded'],
+                        hue_order=['Common', 'Rare'])
+
+        # Set the y-axis limit
+        ax.set_ylim(y_limit_min, 1)
+
+        ax.set_xlabel('Reward', fontsize=15)
+        if i == 0:
+            ax.set_ylabel('Stay Probability', fontsize=15)
+        else:
+            # Hide the y-axis label
+            ax.set_ylabel('', visible=False)
+
+        ax.set_title(labels[i], fontsize=20)
+
+        # Set the size of the legend and the title of the legend
+        ax.legend(title_fontsize='13', fontsize='12')
+
+        # Set the size of the x and y ticks labels
+        ax.tick_params(labelsize=12)
+
+        # Add percentages on top of each bar
+        for p in bar.patches:
+            bar.annotate(format(p.get_height(), '.2f'),
+                        (p.get_x() + p.get_width() / 2., p.get_height()),
+                        ha='center', va='center',
+                        xytext=(0, 10),
+                        textcoords='offset points', fontsize=12)
+
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
+    
 def preprocess_human_data(data_df: pd.DataFrame) -> pd.DataFrame:
     data = data_df.copy()
     # infer common transition from the action taken in stage 1 and isHighProbOne/Two
@@ -148,10 +217,12 @@ def preprocess_human_data(data_df: pd.DataFrame) -> pd.DataFrame:
     return data
 
 
-def print_simple_statistics(data: pd.DataFrame, full=False):
+def print_simple_statistics(data: pd.DataFrame, full=False, title=""):
     # print some statistics 
     # print_simple_statistics(task_df)
     task_df = data.copy()
+    print("###", title)
+
     print("common transitions percentage:", np.mean(task_df["common_transition"])*100, "%")
     print("rewarded trails percentage:", np.mean(task_df["reward"] > 0)*100, "%")
 
@@ -165,9 +236,9 @@ def print_simple_statistics(data: pd.DataFrame, full=False):
         })
         display(counts_stage_2_action_1)
 
-        mean_reward_stage_2 = task_df.groupby('state_transition_to')['reward'].mean().reset_index()
-        mean_reward_stage_2.columns = ['state_transition_to', 'mean_reward_stage_2']
-        display(mean_reward_stage_2)
+        mean_reward = task_df.groupby('state_transition_to')['reward'].mean().reset_index()
+        mean_reward.columns = ['state_transition_to', 'mean_reward']
+        display(mean_reward)
 
         # get the reward probability distributions for the final stage (2)
         def index_reward_probabilities(row):
@@ -177,8 +248,8 @@ def print_simple_statistics(data: pd.DataFrame, full=False):
                 print(row)
 
         task_df_tmp = task_df.copy()
-        task_df_tmp['mean_reward_prob_of_chosen_action_2'] = task_df.apply(index_reward_probabilities, axis=1)
-        reward_probabilities = task_df_tmp.groupby(['state_transition_to', 'stepTwoChoice'])['mean_reward_prob_of_chosen_action_2'].mean().reset_index()
+        task_df_tmp['mean_reward_prob_stepTwoChoice'] = task_df.apply(index_reward_probabilities, axis=1)
+        reward_probabilities = task_df_tmp.groupby(['state_transition_to', 'stepTwoChoice'])['mean_reward_prob_stepTwoChoice'].mean().reset_index()
         display(reward_probabilities)
 
 
