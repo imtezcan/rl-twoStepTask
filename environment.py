@@ -73,16 +73,15 @@ class TwoStepEnv:
 
             self.info["common_transition"] = self.is_common_state(self.state, action)
             self.info["state_transition_to"] = self.state
-            self.info["reward_stage_1"] = reward
-            self.info["action_stage_1"] = action
+            self.info["stepOneChoice"] = action
             # self.info["reward_probabilities_stage_1"] = self.reward_prob_matrix.flatten()
 
         # if in stage 2
         elif self.state in [1, 2]:
             reward = self.reward_function(self.state, action)
             self.terminal = True
-            self.info["reward_stage_2"] = reward
-            self.info["action_stage_2"] = action
+            self.info["reward"] = reward > 0
+            self.info["stepTwoChoice"] = action
             # self.info["reward_probabilities"] = self.reward_prob_matrix.flatten()
             self.info["reward_probabilities"] = self.reward_prob_matrix.flatten()
 
