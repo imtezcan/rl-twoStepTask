@@ -266,6 +266,60 @@ def print_simple_statistics(data: pd.DataFrame, full=False, title=""):
         display(reward_probabilities)
 
 
+def calculate_running_step_probabilities(data):
+    task_df = data.copy()
+    # Initialize columns for stay decisions and running probabilities
+    task_df['stay_decision'] = False
+    task_df['common_rewarded_prob'] = 0.0
+    task_df['common_unrewarded_prob'] = 0.0
+    task_df['rare_rewarded_prob'] = 0.0
+    task_df['rare_unrewarded_prob'] = 0.0
+    
+    # Trackers for calculating running probabilities
+    stay_counts = {'common_rewarded': 0, 'common_unrewarded': 0, 'rare_rewarded': 0, 'rare_unrewarded': 0}
+    total_counts = {'common_rewarded': 0, 'common_unrewarded': 0, 'rare_rewarded': 0, 'rare_unrewarded': 0}
+    
+    for i in range(1, len(task_df)):
+        current = task_df.iloc[i]
+        prev = task_df.iloc[i-1]
+        
+        # Check if the participant stayed with the same choice
+        if current['stepOneChoice'] == prev['stepOneChoice']:
+            task_df.loc[i, 'stay_decision'] = True
+            
+        condition = ('common_' if current['common_transition'] else 'rare_') + ('rewarded' if current['reward'] else 'unrewarded')
+        
+        # Update counts
+        if task_df.loc[i, 'stay_decision']:
+            stay_counts[condition] += 1
+        total_counts[condition] += 1
+        
+        # Calculate running probabilities
+        for key in stay_counts:
+            if total_counts[key] > 0:
+                task_df.loc[i, key + '_prob'] = stay_counts[key] / total_counts[key]
+                
+    return task_df
+
+
+def plot_running_step_probabilities(task_df):
+    plt.figure(figsize=(12, 8))
+
+    # Plot each condition's running probability
+    plt.plot(task_df['trial_index'], task_df['common_rewarded_prob'], label='Common Rewarded')
+    plt.plot(task_df['trial_index'], task_df['common_unrewarded_prob'], label='Common Unrewarded')
+    plt.plot(task_df['trial_index'], task_df['rare_rewarded_prob'], label='Rare Rewarded')
+    plt.plot(task_df['trial_index'], task_df['rare_unrewarded_prob'], label='Rare Unrewarded')
+
+    plt.title('Running Step Probabilities Over Trials')
+    plt.xlabel('Trial Index')
+    plt.ylabel('Running Stay Probability')
+    plt.legend()
+    plt.grid()
+
+    plt.show()
+
+
 if __name__ == "__main__":
     # Load latest simulated data from csv
     agent_type = "model_based"
