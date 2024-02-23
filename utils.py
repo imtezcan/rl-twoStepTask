@@ -120,14 +120,22 @@ def plot_stay_probability(data, title=""):
     # Show the plot
     plt.show()
 
-def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]=None):
+def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]=None, max_plots_per_row=4):
     sns.set_style("whitegrid")
 
     n_plots = len(dfs)
-    fig, axes = plt.subplots(nrows=1, ncols=n_plots, figsize=(10+2*n_plots, 6+0.5*n_plots),
-                             sharey=True)
+    # Calculate the number of rows and columns for the subplot grid
+    rows = (n_plots - 1) // max_plots_per_row + 1  # Ensure at least one row
+    cols = min(n_plots, max_plots_per_row)  # Max of 4 columns
+    
+    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(20, 6*rows), sharey=True, sharex=True)
+    
+    # If there's only one subplot, axes won't be an array, so we wrap it in a list for consistency
     if n_plots == 1:
         axes = [axes]
+    else:
+        # Flatten the axes array to simplify indexing
+        axes = axes.flatten()
 
     fig.suptitle(title)
 
@@ -139,7 +147,8 @@ def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]
     min_stay_prob = np.min([data['Stay Probability'].min() for data in dfs])
     y_limit_min = 0.5 if min_stay_prob > 0.5 else min_stay_prob - 0.1
 
-    for i, (ax, data) in enumerate((zip(axes, dfs))):
+    for i, data in enumerate(dfs):
+        ax = axes[i]
         df = data.copy()
         # Convert 'Rewarded' to a string type for clear plotting
         df['Rewarded'] = df['Rewarded'].map({True: 'Rewarded', False: 'Unrewarded'})
@@ -152,13 +161,6 @@ def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]
 
         # Set the y-axis limit
         ax.set_ylim(y_limit_min, 1)
-
-        ax.set_xlabel('Reward', fontsize=15)
-        if i == 0:
-            ax.set_ylabel('Stay Probability', fontsize=15)
-        else:
-            # Hide the y-axis label
-            ax.set_ylabel('', visible=False)
 
         ax.set_title(labels[i], fontsize=20)
 
@@ -175,6 +177,17 @@ def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]
                         ha='center', va='center',
                         xytext=(0, 10),
                         textcoords='offset points', fontsize=12)
+            
+        if i >= (n_plots - max_plots_per_row):
+            ax.set_xlabel('Reward', fontsize=15)
+        else:
+            # Hide the x-axis label
+            ax.set_xlabel('', visible=False)
+        if i%max_plots_per_row == 0:
+            ax.set_ylabel('Stay Probability', fontsize=15)
+        else:
+            # Hide the y-axis label
+            ax.set_ylabel('', visible=False)
 
     # Show the plot
     plt.tight_layout()

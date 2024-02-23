@@ -9,7 +9,7 @@ class AgentModelBased:
         self.alpha = alpha  # Learning rate
         self.gamma = gamma  # Discount factor
         self.beta = beta  # Temperature parameter for softmax policy
-        self.epsilon = 0.2  # Epsilon for epsilon-greedy policy
+        self.epsilon = epsilon  # Epsilon for epsilon-greedy policy
         self.q_table = np.zeros((len(state_space), len(action_space)))
 
         # Initialize transition model as a 3D numpy array
@@ -81,17 +81,51 @@ class AgentModelBased:
             self.q_table[state, action] += self.alpha * self.reward_prediction_error(
                 state, action, reward, next_state, terminal)
 
-        else:
-            # self.q_table[state, action] +=  self.transition_model[state, action, next_state] * self.alpha * self.reward_prediction_error(state, action, reward, next_state, terminal)
-            # self.q_table[state, action] =  self.transition_model[state, action, next_state] * self.alpha * self.reward_prediction_error(state, action, reward, next_state, terminal)
+        else:  # -> first stage -> update with transition model following the Bellman equation
 
-            self.q_table[state, action] = np.sum(
-                [self.transition_model[state, action, possible_state] * np.max(
-                    [self.q_table[
-                         possible_state, action] + self.alpha * self.reward_prediction_error(
-                        state, action, reward, next_state, terminal) for action in
-                     self.action_space]
-                ) for possible_state in self.state_space])
+            # self.q_table[state, action] = np.sum(
+            #     [
+            #         self.transition_model[state, action, possible_state] *
+            #         np.max(
+            #             [
+            #             self.q_table[
+            #             possible_state, action] + self.alpha * self.reward_prediction_error(
+            #             state, action, reward, next_state, True) 
+            #             for action in self.action_space
+            #             ]
+            #         ) 
+            #     for possible_state in self.state_space])
+            
+            # same logic as above in more readable format
+            
+            # iterate over all possible states
+            # we can do that since the transition model will regulate which states
+            # will be considered for the update
+            # -> trasition propabilities are 0 for states that are not possible
+            # initialize the sum for the Q-table update
+            q_value_sum = 0
+            for possible_state in self.state_space:
+                # a list to hold Q-values for all actions from the possible state
+                q_values = []
+                # iterate over all possible actions in the next state
+                for next_action in self.action_space:
+                    # get the reward prediction error for the next state
+                    next_terminal = possible_state in [1, 2]
+                    reward_pred_error = self.reward_prediction_error(state, next_action, reward, next_state, next_terminal)
+                    # Q-value for this action in the possible state
+                    q_value = self.q_table[possible_state, next_action] + self.alpha * reward_pred_error
+                    q_values.append(q_value)
+                
+                # take the maximum Q-value among all actions for the possible state
+                max_q_value = np.max(q_values)
+                # scale the max Q-value by the transition probability from current state-action pair to the possible state
+                weighted_q_value = self.transition_model[state, action, possible_state] * max_q_value
+                # add the weighted Q-value to the sum
+                q_value_sum += weighted_q_value
+
+            # update the Q-table entry for the state-action pair 
+            self.q_table[state, action] = q_value_sum
+
 
     def reward_prediction_error(self, state, action, reward, next_state, terminal):
         if terminal:
@@ -107,3 +141,8 @@ class AgentModelBased:
 
     def reset(self):
         pass
+
+    def get_action_probabilities(self, state):
+        q_values = self.q_table[state, :]
+        action_probabilities = self.softmax(q_values, self.beta)
+        return action_probabilities

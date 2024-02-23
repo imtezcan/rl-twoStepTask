@@ -43,26 +43,33 @@ class AgentModelFree:
         if action not in self.action_space:
             raise ValueError(
                 f"The action: {action} is not valid, action space: {self.action_space}")
-
-        next_action = self.policy(next_state)
+        
         self.q_table[state, action] += self.alpha * self.reward_prediction_error(state,
                                                                                  action,
                                                                                  reward,
                                                                                  next_state,
-                                                                                 next_action,
                                                                                  terminal)
 
         return self.q_table
 
-    def reward_prediction_error(self, state, action, reward, next_state, next_action,
-                                terminal):
+    def reward_prediction_error(self, state, action, reward, next_state, terminal):
         if terminal:
             return reward - self.q_table[state, action]
+
+        next_action = self.policy(next_state)
+        # # best action in the next state
+        # next_action = np.argmax(self.q_table[next_state, :])
         return reward + self.gamma * self.q_table[next_state, next_action] - \
             self.q_table[state, action]
-
+    
     def update_beliefs(self, state, action, reward, next_state, terminal):
         self.update_q_table_sarsa(state, action, reward, next_state, terminal)
 
     def reset(self):
         pass
+
+    def get_action_probabilities(self, state):
+        q_values = self.q_table[state, :]
+        action_probabilities = self.softmax(q_values, self.beta)
+        return action_probabilities
+
