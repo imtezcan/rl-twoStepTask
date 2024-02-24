@@ -1,9 +1,9 @@
 import pandas as pd
 import numpy as np
-import os
 
 from agents.model_based import AgentModelBased
 from agents.model_free import AgentModelFree
+from agents.hybrid import HybridAgent
 from agents.random_agent import RandomAgent
 from environment import TwoStepEnv
 from utils import random_walk_gaussian
@@ -24,6 +24,8 @@ def simulate(agent_type='random', trials=200, seed=0, verbose=False, params:dict
         agent = AgentModelBased(action_space, state_space, **params)
     elif agent_type == 'model_free':
         agent = AgentModelFree(action_space, state_space, **params)
+    elif agent_type == 'hybrid':
+        agent = HybridAgent(action_space, state_space, **params)
     else:
         agent = RandomAgent(action_space, state_space, **params)
     env = TwoStepEnv()
