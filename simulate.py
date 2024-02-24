@@ -9,17 +9,23 @@ from environment import TwoStepEnv
 from utils import random_walk_gaussian
 
 
-def simulate(agent_type='random', trials=200, **kwargs):
+def simulate(agent_type='random', trials=200, seed=0, verbose=False, params:dict={}):
+    if verbose:
+        print(f"Simulating {agent_type} agent, {trials} trials.")
+        print(f"Agent parameters: {params if params else 'default'}")
+    # set a random seed
+    np.random.seed(seed)
+
     # simulate the task
     action_space = TwoStepEnv.action_space
     state_space = TwoStepEnv.state_space
 
     if agent_type == 'model_based':
-        agent = AgentModelBased(action_space, state_space, **kwargs)
+        agent = AgentModelBased(action_space, state_space, **params)
     elif agent_type == 'model_free':
-        agent = AgentModelFree(action_space, state_space, **kwargs)
+        agent = AgentModelFree(action_space, state_space, **params)
     else:
-        agent = RandomAgent(action_space, state_space, **kwargs)
+        agent = RandomAgent(action_space, state_space, **params)
     env = TwoStepEnv()
     task_data = simulate_two_step_task(env, agent, trials=trials)
 
@@ -29,7 +35,7 @@ def simulate(agent_type='random', trials=200, **kwargs):
     return task_df, agent
 
 def simulate_two_step_task(env: TwoStepEnv, agent=None, trials=200,
-                           policy_method="epsilon-greedy"):
+                           policy_method="softmax"):
     env.reset()
     task_data = {}
 

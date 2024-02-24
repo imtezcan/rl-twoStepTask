@@ -36,3 +36,6 @@ class RandomAgent:
 
     def reset(self):
         pass
+
+    def get_action_probabilities(self, state):
+        return np.ones(len(self.action_space)) / len(self.action_space)
