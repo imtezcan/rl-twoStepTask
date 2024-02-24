@@ -266,6 +266,68 @@ def print_simple_statistics(data: pd.DataFrame, full=False, title=""):
         display(reward_probabilities)
 
 
+def calculate_running_step_probabilities(data):
+    task_df = data.copy()
+    # Initialize columns for stay decisions and running probabilities
+    task_df['stay_decision'] = False
+    task_df['common_rewarded_prob'] = 0.0
+    task_df['common_unrewarded_prob'] = 0.0
+    task_df['rare_rewarded_prob'] = 0.0
+    task_df['rare_unrewarded_prob'] = 0.0
+
+    # Trackers for calculating running probabilities
+    stay_counts = {'common_rewarded': 0, 'common_unrewarded': 0, 'rare_rewarded': 0, 'rare_unrewarded': 0}
+    total_counts = {'common_rewarded': 0, 'common_unrewarded': 0, 'rare_rewarded': 0, 'rare_unrewarded': 0}
+
+    for i in range(1, len(task_df)):
+        current = task_df.iloc[i]
+        prev = task_df.iloc[i-1]
+
+        # Check if the participant stayed with the same choice
+        if current['stepOneChoice'] == prev['stepOneChoice']:
+            task_df.loc[i, 'stay_decision'] = True
+
+        condition = ('common_' if current['common_transition'] else 'rare_') + ('rewarded' if current['reward'] else 'unrewarded')
+
+        # Update counts
+        if task_df.loc[i, 'stay_decision']:
+            stay_counts[condition] += 1
+        total_counts[condition] += 1
+
+        # Calculate running probabilities
+        for key in stay_counts:
+            if total_counts[key] > 0:
+                task_df.loc[i, key + '_prob'] = stay_counts[key] / total_counts[key]
+
+    return task_df
+
+
+def plot_running_step_probabilities(task_df, window_size=1):
+    # Create a copy of the DataFrame to avoid modifying the original
+    df_copy = task_df.copy()
+
+    # Calculate moving averages on the copy
+    df_copy['common_rewarded_prob_ma'] = df_copy['common_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+    df_copy['common_unrewarded_prob_ma'] = df_copy['common_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+    df_copy['rare_rewarded_prob_ma'] = df_copy['rare_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+    df_copy['rare_unrewarded_prob_ma'] = df_copy['rare_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+
+    plt.figure(figsize=(12, 8))
+
+    # Plot each condition's moving average from the copied DataFrame
+    plt.plot(df_copy['trial_index'], df_copy['common_rewarded_prob_ma'], label='Common Rewarded (MA)')
+    plt.plot(df_copy['trial_index'], df_copy['common_unrewarded_prob_ma'], label='Common Unrewarded (MA)')
+    plt.plot(df_copy['trial_index'], df_copy['rare_rewarded_prob_ma'], label='Rare Rewarded (MA)')
+    plt.plot(df_copy['trial_index'], df_copy['rare_unrewarded_prob_ma'], label='Rare Unrewarded (MA)')
+
+    plt.title('Running Step Probabilities Over Trials (Moving Average)')
+    plt.xlabel('Trial Index')
+    plt.ylabel('Running Stay Probability (MA)')
+    plt.legend()
+    plt.grid()
+
+    plt.show()
+
 def softmax(arr, beta):
     e_x = np.exp(beta * (arr - np.max(arr)))  # subtract max value to prevent overflow
     return e_x / e_x.sum(axis=0)  # axis=0 for column-wise operation if arr is 2D, otherwise it's not needed
@@ -289,6 +351,6 @@ if __name__ == "__main__":
     stay_prob = calculate_stay_probability(task_df)
     plot_stay_probability(stay_prob)
 
-    human_df = pd.read_csv("data/experiment_data.csv")
+    human_df = pd.read_csv("data/participants/experiment_data_andrei.csv")
     human_stay_prob = calculate_stay_probability(human_df, True)
     plot_stay_probability(human_stay_prob)
