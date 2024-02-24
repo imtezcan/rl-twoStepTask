@@ -128,7 +128,7 @@ def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]
     rows = (n_plots - 1) // max_plots_per_row + 1  # Ensure at least one row
     cols = min(n_plots, max_plots_per_row)  # Max of 4 columns
     
-    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(20, 6*rows), sharey=True, sharex=True)
+    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(6*cols, 6*rows), sharey=True, sharex=True)
     
     # If there's only one subplot, axes won't be an array, so we wrap it in a list for consistency
     if n_plots == 1:
@@ -315,10 +315,10 @@ def plot_running_step_probabilities(task_df, window_size=1):
     plt.figure(figsize=(12, 8))
 
     # Plot each condition's moving average from the copied DataFrame
-    plt.plot(df_copy['trial_index'], df_copy['common_rewarded_prob_ma'], label='Common Rewarded (MA)')
-    plt.plot(df_copy['trial_index'], df_copy['common_unrewarded_prob_ma'], label='Common Unrewarded (MA)')
-    plt.plot(df_copy['trial_index'], df_copy['rare_rewarded_prob_ma'], label='Rare Rewarded (MA)')
-    plt.plot(df_copy['trial_index'], df_copy['rare_unrewarded_prob_ma'], label='Rare Unrewarded (MA)')
+    plt.plot(df_copy['trial_index'], df_copy['common_rewarded_prob_ma'], label='Common Rewarded (MA)', linestyle='-', color='b')
+    plt.plot(df_copy['trial_index'], df_copy['common_unrewarded_prob_ma'], label='Common Unrewarded (MA)', linestyle='--', color='b')
+    plt.plot(df_copy['trial_index'], df_copy['rare_rewarded_prob_ma'], label='Rare Rewarded (MA)', linestyle='-', color='orange')
+    plt.plot(df_copy['trial_index'], df_copy['rare_unrewarded_prob_ma'], label='Rare Unrewarded (MA)', linestyle='--', color='orange')
 
     plt.title('Running Step Probabilities Over Trials (Moving Average)')
     plt.xlabel('Trial Index')
