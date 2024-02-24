@@ -266,6 +266,22 @@ def print_simple_statistics(data: pd.DataFrame, full=False, title=""):
         display(reward_probabilities)
 
 
+def softmax(arr, beta):
+    e_x = np.exp(beta * (arr - np.max(arr)))  # subtract max value to prevent overflow
+    return e_x / e_x.sum(axis=0)  # axis=0 for column-wise operation if arr is 2D, otherwise it's not needed
+
+
+def calculate_bic(num_params, num_data_points, mle):
+    """
+    Calculates Bayesian Information Criterion to be used in model comparison
+    :param num_params: Number of free parameters that the model has
+    :param num_data_points: Number of data points the model has been fitted to
+    :param mle: Maximum likelihood estimation for the model given data
+    :return:
+    """
+    return num_params * np.log(num_data_points) - 2 * np.log(mle)
+
+
 if __name__ == "__main__":
     # Load latest simulated data from csv
     agent_type = "model_based"
