@@ -107,3 +107,7 @@ class HybridAgent:
         # TODO - Implement the softmax policy in the paper with parameter "p"
         action_probabilities = softmax(self.q_net[state, :], beta)
         return np.random.choice(self.action_space, p=action_probabilities)
+
+    def get_action_probabilities(self, state):
+        beta = self.beta_1 if state == 0 else self.beta_2
+        return softmax(self.q_net[state, :], beta)
