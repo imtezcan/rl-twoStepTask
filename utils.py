@@ -289,22 +289,32 @@ def calculate_running_step_probabilities(data):
     return task_df
 
 
-def plot_running_step_probabilities(task_df):
+def plot_running_step_probabilities(task_df, window_size=1):
+    # Create a copy of the DataFrame to avoid modifying the original
+    df_copy = task_df.copy()
+    
+    # Calculate moving averages on the copy
+    df_copy['common_rewarded_prob_ma'] = df_copy['common_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+    df_copy['common_unrewarded_prob_ma'] = df_copy['common_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+    df_copy['rare_rewarded_prob_ma'] = df_copy['rare_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+    df_copy['rare_unrewarded_prob_ma'] = df_copy['rare_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+
     plt.figure(figsize=(12, 8))
+    
+    # Plot each condition's moving average from the copied DataFrame
+    plt.plot(df_copy['trial_index'], df_copy['common_rewarded_prob_ma'], label='Common Rewarded (MA)')
+    plt.plot(df_copy['trial_index'], df_copy['common_unrewarded_prob_ma'], label='Common Unrewarded (MA)')
+    plt.plot(df_copy['trial_index'], df_copy['rare_rewarded_prob_ma'], label='Rare Rewarded (MA)')
+    plt.plot(df_copy['trial_index'], df_copy['rare_unrewarded_prob_ma'], label='Rare Unrewarded (MA)')
 
-    # Plot each condition's running probability
-    plt.plot(task_df['trial_index'], task_df['common_rewarded_prob'], label='Common Rewarded')
-    plt.plot(task_df['trial_index'], task_df['common_unrewarded_prob'], label='Common Unrewarded')
-    plt.plot(task_df['trial_index'], task_df['rare_rewarded_prob'], label='Rare Rewarded')
-    plt.plot(task_df['trial_index'], task_df['rare_unrewarded_prob'], label='Rare Unrewarded')
-
-    plt.title('Running Step Probabilities Over Trials')
+    plt.title('Running Step Probabilities Over Trials (Moving Average)')
     plt.xlabel('Trial Index')
-    plt.ylabel('Running Stay Probability')
+    plt.ylabel('Running Stay Probability (MA)')
     plt.legend()
     plt.grid()
 
     plt.show()
+
 
 
 if __name__ == "__main__":
@@ -314,6 +324,6 @@ if __name__ == "__main__":
     stay_prob = calculate_stay_probability(task_df)
     plot_stay_probability(stay_prob)
 
-    human_df = pd.read_csv("data/experiment_data.csv")
+    human_df = pd.read_csv("data/participants/experiment_data_andrei.csv")
     human_stay_prob = calculate_stay_probability(human_df, True)
     plot_stay_probability(human_stay_prob)
