@@ -128,7 +128,7 @@ def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]
     rows = (n_plots - 1) // max_plots_per_row + 1  # Ensure at least one row
     cols = min(n_plots, max_plots_per_row)  # Max of 4 columns
     
-    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(20, 6*rows), sharey=True, sharex=True)
+    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(6*cols, 6*rows), sharey=True, sharex=True)
     
     # If there's only one subplot, axes won't be an array, so we wrap it in a list for consistency
     if n_plots == 1:
@@ -200,25 +200,8 @@ def preprocess_human_data(data_df: pd.DataFrame) -> pd.DataFrame:
                                             data['isHighProbOne'],
                                             data['isHighProbTwo'])
 
-    # infer the transition to stage 2 state from the action taken in stage 1 and isHighProbOne/Two
-    # update the state_transition_to value only if condition is met, else keep it as it is
-    data['state_transition_to'] = np.where((data['stepOneChoice'] == 0) & (data['isHighProbOne'] == True),
-                                        1,
-                                        np.nan)
-
-    data['state_transition_to'] = np.where((data['stepOneChoice'] == 0) & (data['isHighProbOne'] == False),
-                                        2,
-                                        data['state_transition_to'])
-
-    data['state_transition_to'] = np.where((data['stepOneChoice'] == 1) & (data['isHighProbTwo'] == True),
-                                        2,
-                                        data['state_transition_to']) 
-
-    data['state_transition_to'] = np.where((data['stepOneChoice'] == 1) & (data['isHighProbTwo'] == False),
-                                        1,
-                                        data['state_transition_to'])
-    # convert to integers
-    data['state_transition_to'] = data['state_transition_to'].astype(int)
+    # infer the state transition to from the action taken in stage 2
+    data['state_transition_to'] = (data['stepTwoChoice'] // 2) + 1  # 1 if choice is 0 or 1. 2 if choice is 2 or 3
 
     # convert the rewardProbabilities to a list
     data['rewardProbabilities'] = data['rewardProbabilities'].apply(
@@ -315,10 +298,10 @@ def plot_running_step_probabilities(task_df, window_size=1):
     plt.figure(figsize=(12, 8))
 
     # Plot each condition's moving average from the copied DataFrame
-    plt.plot(df_copy['trial_index'], df_copy['common_rewarded_prob_ma'], label='Common Rewarded (MA)')
-    plt.plot(df_copy['trial_index'], df_copy['common_unrewarded_prob_ma'], label='Common Unrewarded (MA)')
-    plt.plot(df_copy['trial_index'], df_copy['rare_rewarded_prob_ma'], label='Rare Rewarded (MA)')
-    plt.plot(df_copy['trial_index'], df_copy['rare_unrewarded_prob_ma'], label='Rare Unrewarded (MA)')
+    plt.plot(df_copy['trial_index'], df_copy['common_rewarded_prob_ma'], label='Common Rewarded (MA)', linestyle='-', color='b')
+    plt.plot(df_copy['trial_index'], df_copy['common_unrewarded_prob_ma'], label='Common Unrewarded (MA)', linestyle='--', color='b')
+    plt.plot(df_copy['trial_index'], df_copy['rare_rewarded_prob_ma'], label='Rare Rewarded (MA)', linestyle='-', color='orange')
+    plt.plot(df_copy['trial_index'], df_copy['rare_unrewarded_prob_ma'], label='Rare Unrewarded (MA)', linestyle='--', color='orange')
 
     plt.title('Running Step Probabilities Over Trials (Moving Average)')
     plt.xlabel('Trial Index')
