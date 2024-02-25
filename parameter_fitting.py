@@ -6,8 +6,10 @@ from agents.hybrid import HybridAgent
 from environment import TwoStepEnv
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 import pandas as pd
 from sklearn.model_selection import ParameterSampler
+from itertools import product
 
 # calculate the log likelihood of the human data given the model
 def get_action_probs(agent=None, state=None):
@@ -88,82 +90,160 @@ def log_likelihood(agent, data, consider_both_stages=True, verbose=False):
             print('#'*50)
 
     return LogLikelihood_sum
-
-def LL_for_params_search_space(parammeter_space: dict, human_data, agent_type='randome', consider_both_stages=True, verbose=False):
-    print(f'agent_type: {agent_type}, consider_both_stages: {consider_both_stages}')
-    param_names = [name for name in list(parammeter_space.keys())]
-    param_values = [values for values in list(parammeter_space.values())]
-    n1 = param_names[0]
-    n2 = param_names[1]
-    LL_results = np.zeros((len(param_values[0]), len(param_values[1])))
-    for idx_1, p1 in enumerate(param_values[0]):
-        for idx_2, p2 in enumerate(param_values[1]):
-            param_dict = {n1: p1,
-                        n2: p2}
-            if agent_type == 'model_free':
-                agent = AgentModelFree(TwoStepEnv.action_space, TwoStepEnv.state_space, **param_dict)
-            elif agent_type == 'model_based':
-                agent = AgentModelBased(TwoStepEnv.action_space, TwoStepEnv.state_space, **param_dict)
-            else:
-                agent = RandomAgent(TwoStepEnv.action_space, TwoStepEnv.state_space)
-
-            LL_results[idx_1, idx_2] = log_likelihood(agent, human_data, consider_both_stages, verbose)
-
+# LL_for_params_search_space
+def fit_with_grid_search(parammeter_space: dict, human_data, agent_type='random', consider_both_stages=True, verbose=False):
+    param_names = list(parammeter_space.keys())
+    param_combinations = list(product(*parammeter_space.values()))
+    LL_results = np.zeros(len(param_combinations))
+    
+    for idx, param_vals in enumerate(param_combinations):
+        param_dict = dict(zip(param_names, param_vals))
+        
+        if agent_type == 'model_free':
+            agent = AgentModelFree(TwoStepEnv.action_space, TwoStepEnv.state_space, **param_dict)
+        elif agent_type == 'model_based':
+            agent = AgentModelBased(TwoStepEnv.action_space, TwoStepEnv.state_space, **param_dict)
+        elif agent_type == 'hybrid':
+            agent = HybridAgent(TwoStepEnv.action_space, TwoStepEnv.state_space, **param_dict)
+        else:  # Assumes 'random' or any other type defaults to RandomAgent
+            agent = RandomAgent(TwoStepEnv.action_space, TwoStepEnv.state_space)
+        
+        LL_results[idx] = log_likelihood(agent, human_data, consider_both_stages, verbose)
+    
+    # Reshape the results to fit the dimensions of the parameter space
+    shape_dims = [len(values) for values in parammeter_space.values()]
+    LL_results = LL_results.reshape(*shape_dims)
+    
     return LL_results
 
+
 # plot the log likelihoods
-def plot_fit_results(LL_results, alpha_space, beta_space, full=False):
+def plot_fit_results(LL_results:np.ndarray, parameter_space:dict, full=False, title='', save=False, filename='plots/fit_results.png'):
+    num_params = len(parameter_space)
+    if num_params == 1:
+        plot_fit_results_1d(LL_results, parameter_space, full=full, title=title, save=save, filename=filename)
+
+    if num_params == 2:
+        plot_fit_results_2d(LL_results, parameter_space, full=full, title=title, save=save, filename=filename)
+    
+    if num_params > 2:
+        plot_heatmap_slices(LL_results, parameter_space, full=full, title=title, save=save, filename=filename)
+
+    else:
+        print(f'parameter space should be of type dict, provided: {type(parameter_space)}')
+
+def plot_fit_results_1d(LL_results:np.ndarray, parameter_space:dict, full=False, title='', save=False, filename='plots/fit_results.png'):
+    param_name, param_space = list(parameter_space.items())[0]
+    fig, ax = plt.subplots(figsize=(10, 6))
+    fig.suptitle(title)
+    ax.plot(param_space, LL_results)
+    ax.set_xlabel(param_name)
+    ax.set_ylabel('Log Likelihood')
+    ax.set_title('Log Likelihood of human data given model')
+    fig.tight_layout()
+    plt.show()
+    if save:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        fig.savefig(filename)
+
+def plot_fit_results_2d(LL_results, parameter_space:dict, full=False, title='', save=False, filename='plots/fit_results.png'):
+    if len(parameter_space) != 2:
+        raise ValueError(f'This function is only for 2D parameter spaces, provided {len(parameter_space)}D')
+    
+    seperated_param_space = list(parameter_space.items())
+    param_1, param_1_space = seperated_param_space[0]
+    param_2, param_2_space = seperated_param_space[1]
+    
     if full:
-        plt.figure(figsize=(10, 6))
-        for idx, beta in enumerate(beta_space):
-            plt.plot(alpha_space, LL_results[idx,:], label=f'alpha = {beta}')
-        plt.xlabel('beta')
-        plt.ylabel('Log Likelihood')
-        plt.title('Log Likelihood of human data given model')
-        plt.legend()
-        plt.show()
+        # plot the log likelihoods for each parameter value across the other parameter
+        fig, (ax_1, ax_2) = plt.figure(nrows=1, ncols=2, figsize=(10, 6))
+        for idx, val in enumerate(param_1_space):
+            ax_1.plot(param_2_space, LL_results[:,idx], label=f'{param_1} = {val}')
+        ax_1.set_xlabel(param_2)
+        ax_1.set_ylabel('Log Likelihood')
+        ax_1.set_title('Log Likelihood of human data given model')
+        ax_1.legend()
 
-        plt.figure(figsize=(10, 6))
-        for idx, alpha in enumerate(alpha_space):
-            plt.plot(beta_space, LL_results[:,idx], label=f'beta = {alpha}')
-        plt.xlabel('alpha')
-        plt.ylabel('Log Likelihood')
-        plt.title('Log Likelihood of human data given model')
-        plt.legend()
-        plt.show()
+        for idx, val in enumerate(param_2_space):
+            ax_2.plot(param_1_space, LL_results[idx,:], label=f'{param_2} = {val}')
+        ax_2.set_xlabel(param_1)
+        ax_2.set_ylabel('Log Likelihood')
+        ax_2.set_title('Log Likelihood of human data given model')
+        ax_2.legend()
 
-    # plot color map of the log likelihoods
-    # extend the results to a 2D space with a dummy dimension
-    # LL_results = np.expand_dims(LL_results, axis=0)
-    x_ticks = np.round(beta_space, 3)
-    y_ticks = np.round(alpha_space, 3)
+        fig.tight_layout()
+        plt.show()
+        if save:
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            filename = filename.split('.')[0] + '_full.png'
+            fig.savefig(filename)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    fig.suptitle(title)
+
+    x_ticks = np.round(param_2_space, 3)
+    y_ticks = np.round(param_1_space, 3)
     visible_ticks_x = [x_ticks[0], x_ticks[len(x_ticks) // 2], x_ticks[-1]]
     visible_ticks_y = [y_ticks[0], y_ticks[len(y_ticks) // 2], y_ticks[-1]]
-    plt.figure(figsize=(10, 6))
-    plt.imshow(LL_results, origin='lower', cmap='inferno')
-    # plt.imshow(LL_results, origin='lower', cmap='viridis')
-    plt.xlabel('beta')
-    plt.xticks([0, len(x_ticks) // 2, len(x_ticks) - 1], visible_ticks_x)
-    plt.ylabel('alpha')
-    plt.yticks([0, len(y_ticks) // 2, len(y_ticks) - 1], visible_ticks_y)
-    plt.colorbar(label='Log Likelihood')
-    plt.title('Log Likelihoods')
+
+    im = ax.imshow(LL_results, origin='lower', cmap='inferno')
+
+    ax.set_xlabel(param_2)
+    ax.set_xticks([0, len(x_ticks) // 2, len(x_ticks) - 1])
+    ax.set_xticklabels(visible_ticks_x)
+    ax.set_ylabel(param_1)
+    ax.set_yticks([0, len(y_ticks) // 2, len(y_ticks) - 1])
+    ax.set_yticklabels(visible_ticks_y)
+    ax.set_title('Log Likelihoods')
+
+    fig.colorbar(im, ax=ax, label='Log Likelihood')
+
     # Annotate the maximum log likelihood on the plot
     max_ll_idx = np.unravel_index(np.argmax(LL_results, axis=None), LL_results.shape)
-    max_alpha = alpha_space[max_ll_idx[0]]
-    max_beta = beta_space[max_ll_idx[1]]
-    max_alpha = np.round(max_alpha, 2)
-    max_beta = np.round(max_beta, 2)
-    plt.annotate(f'Max LL\nalpha={max_alpha}, beta={max_beta}',
-             xy=(max_ll_idx[1], max_ll_idx[0]),
-             xytext=(max_ll_idx[1]+1, max_ll_idx[0]+1),
-             arrowprops=dict(facecolor='white', shrink=0.005), color='darkgreen')
+    max_ll = np.round(LL_results[max_ll_idx], 2)
+    max_param_1 = np.round(param_1_space[max_ll_idx[0]], 2)
+    max_param_2 = np.round(param_2_space[max_ll_idx[1]], 2)
+
+    ax.annotate(f'Max LL={max_ll}\n{param_1}={max_param_1}, {param_2}={max_param_2}',
+            xy=(max_ll_idx[1], max_ll_idx[0]),
+            xytext=(max_ll_idx[1]+1, max_ll_idx[0]+1),
+            arrowprops=dict(facecolor='darkgreen', shrink=0.005), color='darkgreen', zorder=10, textcoords='offset points')
+    
+    fig.tight_layout()
     plt.show()
+    if save:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        fig.savefig(filename)
+
+def plot_heatmap_slices(LL_results, parameter_space, full=False, title='', save=False, filename='plots/fit_results.png'):
+    num_params = len(parameter_space)
+    param_names = list(parameter_space.keys())
+    param_spaces = [parameter_space[name] for name in param_names]
+    
+    # Find the indices of the maximum log likelihood
+    max_ll_indices = np.unravel_index(np.argmax(LL_results), LL_results.shape)
+    # plot the 2D slices for all pairs of parameters and fixed values for the other parameters at the maximum LL
+    for i in range(num_params):
+        for j in range(i + 1, num_params):
+            # Extract the 2D slice for the i-th and j-th parameters
+            fixed_params = list(max_ll_indices)
+            fixed_params[i] = slice(None)  # All values for the i-th param
+            fixed_params[j] = slice(None)  # All values for the j-th param
+            slice_ij = LL_results[tuple(fixed_params)]
+
+            # define the 2d parameter space and plot using plot_fit_results_2d
+            param_space_ij = {param_names[i]: param_spaces[i], 
+                              param_names[j]: param_spaces[j]}
+            # pass the fixed parameters and their values as title
+            plot_title = f'{title} {param_names[i]}={param_spaces[i][max_ll_indices[i]]}, {param_names[j]}={param_spaces[j][max_ll_indices[j]]}'
+            if save:
+                filename = filename.split('.')[0] + f'_{param_names[i]}_{param_spaces[i][max_ll_indices[i]]}_{param_names[j]}_{param_spaces[j][max_ll_indices[j]]}.png'
+            plot_fit_results_2d(slice_ij, param_space_ij, full, plot_title, save, filename)
 
 
-def fit_with_random_search(agent_type, param_distributions, human_data, n_iter=100,consider_both_stages=True):
+def fit_with_random_search(agent_type, param_distributions, data, n_iter=100,consider_both_stages=True, seed=0):
     # Generate parameter samples
-    param_list = list(ParameterSampler(param_distributions, n_iter=n_iter, random_state=0))
+    param_list = list(ParameterSampler(param_distributions, n_iter=n_iter, random_state=seed))
 
     # Initialize an empty list for the results
     results_list = []
@@ -171,7 +251,7 @@ def fit_with_random_search(agent_type, param_distributions, human_data, n_iter=1
     # Evaluate log likelihood for sampled parameter sets
     for params in param_list:
         agent = create_agent(agent_type, params)
-        log_likelihood_value = log_likelihood(agent, human_data, consider_both_stages)
+        log_likelihood_value = log_likelihood(agent, data, consider_both_stages)
         results_list.append({**params, 'log_likelihood': log_likelihood_value})
 
     # Convert to DataFrame

@@ -12,7 +12,6 @@ def random_walk_gaussian(prob, sd, min_prob=0, max_prob=1):
     new_prob = np.clip(new_prob, min_prob, max_prob)
     return new_prob
 
-
 # Load latest simulated data from csv
 def load_latest_simulated_data(agent_type):
     data_folder = os.path.join("data", "simulated", agent_type)
@@ -32,7 +31,6 @@ def save_simulated_data(task_df: pd.DataFrame, agent_type: str):
     os.makedirs(file_path, exist_ok=True)
     filename = os.path.join(file_path, "simulated_data.csv")
     task_df.to_csv(filename, index=False)
-
 
 def calculate_stay_probability(data: pd.DataFrame) -> pd.DataFrame:
     # get a copy of the data
@@ -75,53 +73,13 @@ def calculate_stay_probability(data: pd.DataFrame) -> pd.DataFrame:
 
     return results, tmp_df
 
-
-def plot_stay_probability(data, title=""):
-    df = data.copy()
-    # Convert 'Rewarded' to a string type for clear plotting
-    df['Rewarded'] = df['Rewarded'].map({True: 'Rewarded', False: 'Unrewarded'})
-    df['Common'] = df['Common'].map({True: 'Common', False: 'Rare'})
-
-    y_limit_min = 0.5 if df['Stay Probability'].min() > 0.5 else df[
-                                                                     'Stay Probability'].min() - 0.1
-
+def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]=None, max_plots_per_row=4, save=False, filename="plots/stay_probabilities.png"):
     sns.set_style("whitegrid")
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    fig.suptitle(title)
-
-    # Create the bar plot
-    bar = sns.barplot(x='Rewarded', y='Stay Probability', hue='Common',
-                      data=df, ax=ax,
-                      order=['Rewarded', 'Unrewarded'],
-                      hue_order=['Common', 'Rare'])
-
-    # Set the y-axis limit
-    ax.set_ylim(y_limit_min, 1)
-
-    ax.set_xlabel('Rewarded', fontsize=15)
-    ax.set_ylabel('Stay Probability', fontsize=15)
-    ax.set_title('Stay Probability by Reward and Transition Type', fontsize=20)
-
-    # Set the size of the legend and the title of the legend
-    ax.legend(title_fontsize='13', fontsize='12')
-
-    # Set the size of the x and y ticks labels
-    ax.tick_params(labelsize=12)
-
-    # Add percentages on top of each bar
-    for p in bar.patches:
-        bar.annotate(format(p.get_height(), '.2f'),
-                     (p.get_x() + p.get_width() / 2., p.get_height()),
-                     ha='center', va='center',
-                     xytext=(0, 10),
-                     textcoords='offset points', fontsize=12)
-
-    # Show the plot
-    plt.show()
-
-def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]=None, max_plots_per_row=4):
-    sns.set_style("whitegrid")
+    if isinstance(dfs, pd.DataFrame) or not isinstance(dfs, list):
+        dfs = [dfs]  # Wrap the single DataFrame in a list
+    if labels is not None and not isinstance(labels, list):
+        labels = [labels]
 
     n_plots = len(dfs)
     # Calculate the number of rows and columns for the subplot grid
@@ -189,9 +147,12 @@ def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]
             # Hide the y-axis label
             ax.set_ylabel('', visible=False)
 
-    # Show the plot
-    plt.tight_layout()
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.9)
     plt.show()
+    if save:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        fig.savefig(filename)
     
 def preprocess_human_data(data_df: pd.DataFrame) -> pd.DataFrame:
     data = data_df.copy()
@@ -211,7 +172,6 @@ def preprocess_human_data(data_df: pd.DataFrame) -> pd.DataFrame:
     data['stepTwoChoice'] = data['stepTwoChoice'] % 2
 
     return data
-
 
 def print_simple_statistics(data: pd.DataFrame, full=False, title=""):
     # print some statistics 
@@ -248,7 +208,6 @@ def print_simple_statistics(data: pd.DataFrame, full=False, title=""):
         reward_probabilities = task_df_tmp.groupby(['state_transition_to', 'stepTwoChoice'])['mean_reward_prob_stepTwoChoice'].mean().reset_index()
         display(reward_probabilities)
 
-
 def calculate_running_step_probabilities(data):
     task_df = data.copy()
     # Initialize columns for stay decisions and running probabilities
@@ -284,37 +243,74 @@ def calculate_running_step_probabilities(data):
 
     return task_df
 
+def plot_running_step_probabilities(task_dfs:list, labels:list=None,window_size=1, max_plots_per_row=3, title='', save=False, filename="plots/running_step_probabilities.png"):
+    
+    if isinstance(task_dfs, pd.DataFrame) or not isinstance(task_dfs, list):
+        task_dfs = [task_dfs]
+    if labels is not None and not isinstance(labels, list):
+        labels = [labels]
 
-def plot_running_step_probabilities(task_df, window_size=1):
     # Create a copy of the DataFrame to avoid modifying the original
-    df_copy = task_df.copy()
+    n_plots = len(task_dfs)
+    # Calculate the number of rows and columns for the subplot grid
+    rows = (n_plots - 1) // max_plots_per_row + 1  # Ensure at least one row
+    cols = min(n_plots, max_plots_per_row)  # Max of 4 columns
+    
+    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(6*cols, 6*rows), sharey=True, sharex=True)
+    
+    # If there's only one subplot, axes won't be an array, so we wrap it in a list for consistency
+    if n_plots == 1:
+        axes = [axes]
+    else:
+        # Flatten the axes array to simplify indexing
+        axes = axes.flatten()
 
-    # Calculate moving averages on the copy
-    df_copy['common_rewarded_prob_ma'] = df_copy['common_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
-    df_copy['common_unrewarded_prob_ma'] = df_copy['common_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
-    df_copy['rare_rewarded_prob_ma'] = df_copy['rare_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
-    df_copy['rare_unrewarded_prob_ma'] = df_copy['rare_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+    fig.suptitle(title)
 
-    plt.figure(figsize=(12, 8))
+    if labels is None:
+        labels = [f"Plot {i}" for i in range(len(task_dfs))]
+    if len(labels) < len(task_dfs):
+        labels = labels + [f"Plot {i}" for i in range(len(task_dfs) - len(labels))]
+    
+    for i, data in enumerate(task_dfs):
+        ax = axes[i]
+        df_copy = data.copy()
 
-    # Plot each condition's moving average from the copied DataFrame
-    plt.plot(df_copy['trial_index'], df_copy['common_rewarded_prob_ma'], label='Common Rewarded (MA)', linestyle='-', color='b')
-    plt.plot(df_copy['trial_index'], df_copy['common_unrewarded_prob_ma'], label='Common Unrewarded (MA)', linestyle='--', color='b')
-    plt.plot(df_copy['trial_index'], df_copy['rare_rewarded_prob_ma'], label='Rare Rewarded (MA)', linestyle='-', color='orange')
-    plt.plot(df_copy['trial_index'], df_copy['rare_unrewarded_prob_ma'], label='Rare Unrewarded (MA)', linestyle='--', color='orange')
+        # Calculate moving averages on the copy
+        df_copy['common_rewarded_prob_ma'] = df_copy['common_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+        df_copy['common_unrewarded_prob_ma'] = df_copy['common_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+        df_copy['rare_rewarded_prob_ma'] = df_copy['rare_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+        df_copy['rare_unrewarded_prob_ma'] = df_copy['rare_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
 
-    plt.title('Running Step Probabilities Over Trials (Moving Average)')
-    plt.xlabel('Trial Index')
-    plt.ylabel('Running Stay Probability (MA)')
-    plt.legend()
-    plt.grid()
+        # Plot each condition's moving average from the copied DataFrame
+        ax.plot(df_copy['trial_index'], df_copy['common_rewarded_prob_ma'], label='Common Rewarded (MA)', linestyle='-', color='b')
+        ax.plot(df_copy['trial_index'], df_copy['common_unrewarded_prob_ma'], label='Common Unrewarded (MA)', linestyle='--', color='b')
+        ax.plot(df_copy['trial_index'], df_copy['rare_rewarded_prob_ma'], label='Rare Rewarded (MA)', linestyle='-', color='orange')
+        ax.plot(df_copy['trial_index'], df_copy['rare_unrewarded_prob_ma'], label='Rare Unrewarded (MA)', linestyle='--', color='orange')
+
+        ax.set_title(labels[i])
+        ax.legend()
+        ax.grid(True)
+
+        if i >= (n_plots - max_plots_per_row):
+            ax.set_xlabel('Trial Index', fontsize=15)
+        else:
+            # Hide the x-axis label
+            ax.set_xlabel('', visible=False)
+        if i%max_plots_per_row == 0:
+            ax.set_ylabel('Running Stay Probability (MA)', fontsize=15)
+        else:
+            # Hide the y-axis label
+            ax.set_ylabel('', visible=False)
 
     plt.show()
-
+    if save:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        fig.savefig(filename)
+    
 def softmax(arr, beta):
     e_x = np.exp(beta * (arr - np.max(arr)))  # subtract max value to prevent overflow
     return e_x / e_x.sum(axis=0)  # axis=0 for column-wise operation if arr is 2D, otherwise it's not needed
-
 
 def calculate_bic(num_params, num_data_points, ll):
     """
@@ -326,14 +322,78 @@ def calculate_bic(num_params, num_data_points, ll):
     """
     return num_params * np.log(num_data_points) - 2 * ll
 
+# def plot_stay_probability(data, title="", save=False, filename="plots/stay_probabilities.png"):
+#     df = data.copy()
+#     # Convert 'Rewarded' to a string type for clear plotting
+#     df['Rewarded'] = df['Rewarded'].map({True: 'Rewarded', False: 'Unrewarded'})
+#     df['Common'] = df['Common'].map({True: 'Common', False: 'Rare'})
 
-if __name__ == "__main__":
-    # Load latest simulated data from csv
-    agent_type = "model_based"
-    task_df = load_latest_simulated_data(agent_type)
-    stay_prob = calculate_stay_probability(task_df)
-    plot_stay_probability(stay_prob)
+#     y_limit_min = 0.5 if df['Stay Probability'].min() > 0.5 else df[
+#                                                                      'Stay Probability'].min() - 0.1
 
-    human_df = pd.read_csv("data/participants/experiment_data_andrei.csv")
-    human_stay_prob = calculate_stay_probability(human_df, True)
-    plot_stay_probability(human_stay_prob)
+#     sns.set_style("whitegrid")
+
+#     fig, ax = plt.subplots(figsize=(10, 6))
+#     fig.suptitle(title)
+
+#     # Create the bar plot
+#     bar = sns.barplot(x='Rewarded', y='Stay Probability', hue='Common',
+#                       data=df, ax=ax,
+#                       order=['Rewarded', 'Unrewarded'],
+#                       hue_order=['Common', 'Rare'])
+
+#     # Set the y-axis limit
+#     ax.set_ylim(y_limit_min, 1)
+
+#     ax.set_xlabel('Rewarded', fontsize=15)
+#     ax.set_ylabel('Stay Probability', fontsize=15)
+#     ax.set_title('Stay Probability by Reward and Transition Type', fontsize=20)
+
+#     # Set the size of the legend and the title of the legend
+#     ax.legend(title_fontsize='13', fontsize='12')
+
+#     # Set the size of the x and y ticks labels
+#     ax.tick_params(labelsize=12)
+
+#     # Add percentages on top of each bar
+#     for p in bar.patches:
+#         bar.annotate(format(p.get_height(), '.2f'),
+#                      (p.get_x() + p.get_width() / 2., p.get_height()),
+#                      ha='center', va='center',
+#                      xytext=(0, 10),
+#                      textcoords='offset points', fontsize=12)
+
+#     fig.tight_layout()
+#     plt.show()
+#     if save:
+#         os.makedirs(os.path.dirname(filename), exist_ok=True)
+#         fig.savefig(filename)
+
+# def plot_running_step_probabilities(task_df, window_size=1, title='', save=False, filename="plots/running_step_probabilities.png"):
+#     # Create a copy of the DataFrame to avoid modifying the original
+#     df_copy = task_df.copy()
+
+#     # Calculate moving averages on the copy
+#     df_copy['common_rewarded_prob_ma'] = df_copy['common_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+#     df_copy['common_unrewarded_prob_ma'] = df_copy['common_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+#     df_copy['rare_rewarded_prob_ma'] = df_copy['rare_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+#     df_copy['rare_unrewarded_prob_ma'] = df_copy['rare_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
+
+#     fig, ax = plt.subplots(figsize=(12, 8))
+#     fig.suptitle(title)
+#     # Plot each condition's moving average from the copied DataFrame
+#     ax.plot(df_copy['trial_index'], df_copy['common_rewarded_prob_ma'], label='Common Rewarded (MA)', linestyle='-', color='b')
+#     ax.plot(df_copy['trial_index'], df_copy['common_unrewarded_prob_ma'], label='Common Unrewarded (MA)', linestyle='--', color='b')
+#     ax.plot(df_copy['trial_index'], df_copy['rare_rewarded_prob_ma'], label='Rare Rewarded (MA)', linestyle='-', color='orange')
+#     ax.plot(df_copy['trial_index'], df_copy['rare_unrewarded_prob_ma'], label='Rare Unrewarded (MA)', linestyle='--', color='orange')
+
+#     ax.set_title('Running Step Probabilities Over Trials (Moving Average)')
+#     ax.set_xlabel('Trial Index')
+#     ax.set_ylabel('Running Stay Probability (MA)')
+#     ax.legend()
+#     ax.grid()
+
+#     plt.show()
+#     if save:
+#         os.makedirs(os.path.dirname(filename), exist_ok=True)
+#         fig.savefig(filename)

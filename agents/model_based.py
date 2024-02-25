@@ -48,32 +48,32 @@ class AgentModelBased:
 
     def update_transition_model(self, current_state, action, next_state, terminal):
         # Simple counting method to update transition probabilities
-        # TODO - Implement more sophisticated methods like Bayesian updating
-        #      - at least insure no 0 probabilities for stage 1 to stage 2 transitions
+        # TODO - Implement more sophisticated methods like Bayesian update ?
         if terminal:
             return
-        
-        # Increment the count for the observed transition
-        self.transition_counts[current_state, action, next_state] += 1
-        # Normalize the transition probabilities for the current state-action pair
-        total_transitions = self.transition_counts[current_state, action, :].sum()
+        # update transition model only for stage 1 (state 0) 
+        if current_state == 0:
+            # Increment the count for the observed transition
+            self.transition_counts[current_state, action, next_state] += 1
+            # Normalize the transition probabilities for the current state-action pair
+            total_transitions = self.transition_counts[current_state, action, :].sum()
 
-        # incremental update
-        self.transition_model[current_state, action, :] = self.transition_counts[
-                                                          current_state, action,
-                                                          :] / total_transitions
-        
+            # incremental update
+            # insure no zero probabilities with +1 in the numerator (good for exploration in the beginning)
+            # self.transition_model[current_state, action, :] = (self.transition_counts[
+            #                                     current_state, action, :] + 1
+            #                                     ) / total_transitions          
                 
-        # TODO integrate high-low update below
-        # # high-low update
-        # p_high = 0.7
-        # # self.transition_model[current_state, action, 0] = 0
-        # # what state got vitited more sofar
-        # most_visited_state = self.transition_counts[current_state, action, 1] >= total_transitions / 2  
-        # most_visited_state = int(most_visited_state)
-        # self.transition_model[current_state, action, 1:][1-most_visited_state] = p_high
-        # self.transition_model[current_state, action, 1:][most_visited_state] = 1 - p_high  
-
+            # TODO integrate high-low update below
+            # # high-low update
+            P_COMMON = 0.7
+            # self.transition_model[current_state, action, 0] = 0
+            # what state got vitited more sofar
+            most_visited_state = self.transition_counts[current_state, action, 1] >= total_transitions / 2  
+            most_visited_state = int(most_visited_state)
+            self.transition_model[current_state, action, 1:][1-most_visited_state] = P_COMMON
+            self.transition_model[current_state, action, 1:][most_visited_state] = 1 - P_COMMON  
+        
 
     def update_q_table(self, state, action, reward, next_state, terminal):
         # Update Q-table using the transition model
@@ -82,22 +82,6 @@ class AgentModelBased:
                 state, action, reward, next_state, terminal)
 
         else:  # -> first stage -> update with transition model following the Bellman equation
-
-            # self.q_table[state, action] = np.sum(
-            #     [
-            #         self.transition_model[state, action, possible_state] *
-            #         np.max(
-            #             [
-            #             self.q_table[
-            #             possible_state, action] + self.alpha * self.reward_prediction_error(
-            #             state, action, reward, next_state, True) 
-            #             for action in self.action_space
-            #             ]
-            #         ) 
-            #     for possible_state in self.state_space])
-            
-            # same logic as above in more readable format
-            
             # iterate over all possible states
             # we can do that since the transition model will regulate which states
             # will be considered for the update
