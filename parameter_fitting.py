@@ -2,23 +2,24 @@ from simulate import simulate
 from agents.random_agent import RandomAgent
 from agents.model_free import AgentModelFree
 from agents.model_based import AgentModelBased
+from agents.hybrid import HybridAgent
 from environment import TwoStepEnv
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import os
+from sklearn.model_selection import ParameterSampler
 
 # calculate the log likelihood of the human data given the model
 def get_action_probs(agent=None, state=None):
-    if agent is None:    
+    if agent is None:
       return np.random.uniform(size=2)
-    
+
     return agent.get_action_probabilities(state)
 
 def apply_choices(agent=None, stage_1=None, stage_2=None, recieved_reward=None):
     if agent is None:
         return
-    
+
     state_1 = stage_1[0]
     action_1 = stage_1[1]
     state_2 = stage_2[0]
@@ -47,36 +48,31 @@ def fit_to_average_accumulated_reward(parammeter_space: dict, agent_type='random
 
 def log_likelihood(agent, data, consider_both_stages=True, verbose=False):
     LogLikelihood_sum = 0
-    for idx ,trail_data in data.iterrows():
-        chosen_action_1 = trail_data['stepOneChoice']
-        chosen_action_2 = trail_data['stepTwoChoice']
+    for idx, trial_data in data.iterrows():
+        chosen_action_1 = trial_data['stepOneChoice']
+        chosen_action_2 = trial_data['stepTwoChoice']
         stage_1_state = 0
-        stage_2_state = trail_data['state_transition_to']
-        recieved_reward = int(trail_data['reward'])
+        stage_2_state = trial_data['state_transition_to']
+        recieved_reward = int(trial_data['reward'])
 
-        action_probs_stage_1 = get_action_probs(agent, stage_1_state) # return a list of action probabilities
+        action_probs_stage_1 = get_action_probs(agent, stage_1_state)
         chosen_action_1_prob = action_probs_stage_1[chosen_action_1]
-        # TODO updtae belief atter each action
+        agent.update_beliefs(stage_1_state, chosen_action_1, 0, stage_2_state, False)
+
         action_probs_stage_2 = get_action_probs(agent, stage_2_state)
         chosen_action_2_prob = action_probs_stage_2[chosen_action_2]
+        agent.update_beliefs(stage_2_state, chosen_action_2, recieved_reward, stage_2_state, True)
 
         # calculate the log likelihood
         # based on only the first stage stage
         LogLikelihood_sum += np.log(chosen_action_1_prob)
-        
+
         if consider_both_stages:
             # based on both stages
             # assuming the actions are independent following the Markov property
             # P(a1, a2) = P(a1) * P(a2)
             # -> log(P(a1, a2)) = log(P(a1)) + log(P(a2))
             LogLikelihood_sum += np.log(chosen_action_2_prob)
-        
-        # let the model choose the actions of the human and update its beliefs
-        stage_1 = (stage_1_state, chosen_action_1)
-        stage_2 = (stage_2_state, chosen_action_2)
-
-        # update the model's beliefs
-        apply_choices(agent, stage_1, stage_2, recieved_reward)
 
         # print everything for debugging
         if verbose:
@@ -112,7 +108,7 @@ def LL_for_params_search_space(parammeter_space: dict, human_data, agent_type='r
                 agent = RandomAgent(TwoStepEnv.action_space, TwoStepEnv.state_space)
 
             LL_results[idx_1, idx_2] = log_likelihood(agent, human_data, consider_both_stages, verbose)
-    
+
     return LL_results
 
 # plot the log likelihoods
@@ -164,3 +160,45 @@ def plot_fit_results(LL_results, alpha_space, beta_space, full=False):
              arrowprops=dict(facecolor='white', shrink=0.005), color='darkgreen')
     plt.show()
 
+
+def fit_with_random_search(agent_type, param_distributions, human_data, n_iter=100,consider_both_stages=True):
+    # Generate parameter samples
+    param_list = list(ParameterSampler(param_distributions, n_iter=n_iter, random_state=0))
+
+    # Initialize an empty list for the results
+    results_list = []
+
+    # Evaluate log likelihood for sampled parameter sets
+    for params in param_list:
+        agent = create_agent(agent_type, params)
+        log_likelihood_value = log_likelihood(agent, human_data, consider_both_stages)
+        results_list.append({**params, 'log_likelihood': log_likelihood_value})
+
+    # Convert to DataFrame
+    results_df = pd.DataFrame(results_list)
+
+    return results_df
+
+
+def get_best_params_and_ll(results_df):
+    # Sort the dataframe and get first row
+    sorted_df = results_df.sort_values(by='log_likelihood', ascending=False)
+    best_parameters_row = sorted_df.iloc[0]
+
+    # Extract the best parameters and log likelihood
+    best_params = best_parameters_row.drop('log_likelihood').to_dict()
+    best_log_likelihood = best_parameters_row['log_likelihood']
+
+    return best_params, best_log_likelihood
+
+
+def create_agent(agent_type, params):
+    if agent_type == 'model_free':
+        agent = AgentModelFree(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
+    elif agent_type == 'model_based':
+        agent = AgentModelBased(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
+    elif agent_type == 'hybrid':
+        agent = HybridAgent(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
+    else:
+        agent = RandomAgent(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
+    return agent
