@@ -200,25 +200,8 @@ def preprocess_human_data(data_df: pd.DataFrame) -> pd.DataFrame:
                                             data['isHighProbOne'],
                                             data['isHighProbTwo'])
 
-    # infer the transition to stage 2 state from the action taken in stage 1 and isHighProbOne/Two
-    # update the state_transition_to value only if condition is met, else keep it as it is
-    data['state_transition_to'] = np.where((data['stepOneChoice'] == 0) & (data['isHighProbOne'] == True),
-                                        1,
-                                        np.nan)
-
-    data['state_transition_to'] = np.where((data['stepOneChoice'] == 0) & (data['isHighProbOne'] == False),
-                                        2,
-                                        data['state_transition_to'])
-
-    data['state_transition_to'] = np.where((data['stepOneChoice'] == 1) & (data['isHighProbTwo'] == True),
-                                        2,
-                                        data['state_transition_to']) 
-
-    data['state_transition_to'] = np.where((data['stepOneChoice'] == 1) & (data['isHighProbTwo'] == False),
-                                        1,
-                                        data['state_transition_to'])
-    # convert to integers
-    data['state_transition_to'] = data['state_transition_to'].astype(int)
+    # infer the state transition to from the action taken in stage 2
+    data['state_transition_to'] = (data['stepTwoChoice'] // 2) + 1  # 1 if choice is 0 or 1. 2 if choice is 2 or 3
 
     # convert the rewardProbabilities to a list
     data['rewardProbabilities'] = data['rewardProbabilities'].apply(
@@ -333,15 +316,15 @@ def softmax(arr, beta):
     return e_x / e_x.sum(axis=0)  # axis=0 for column-wise operation if arr is 2D, otherwise it's not needed
 
 
-def calculate_bic(num_params, num_data_points, mle):
+def calculate_bic(num_params, num_data_points, ll):
     """
     Calculates Bayesian Information Criterion to be used in model comparison
     :param num_params: Number of free parameters that the model has
     :param num_data_points: Number of data points the model has been fitted to
-    :param mle: Maximum likelihood estimation for the model given data
+    :param ll: Maximum log likelihood estimation for the model given data
     :return:
     """
-    return num_params * np.log(num_data_points) - 2 * np.log(mle)
+    return num_params * np.log(num_data_points) - 2 * ll
 
 
 if __name__ == "__main__":
