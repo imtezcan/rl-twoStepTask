@@ -333,15 +333,15 @@ def softmax(arr, beta):
     return e_x / e_x.sum(axis=0)  # axis=0 for column-wise operation if arr is 2D, otherwise it's not needed
 
 
-def calculate_bic(num_params, num_data_points, mle):
+def calculate_bic(num_params, num_data_points, ll):
     """
     Calculates Bayesian Information Criterion to be used in model comparison
     :param num_params: Number of free parameters that the model has
     :param num_data_points: Number of data points the model has been fitted to
-    :param mle: Maximum likelihood estimation for the model given data
+    :param ll: Maximum log likelihood estimation for the model given data
     :return:
     """
-    return num_params * np.log(num_data_points) - 2 * np.log(mle)
+    return num_params * np.log(num_data_points) - 2 * ll
 
 
 if __name__ == "__main__":
