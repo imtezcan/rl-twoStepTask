@@ -33,9 +33,9 @@ class HybridAgent:
         self.w = w
         self.p = p
 
-        self.q_td = np.zeros((len(state_space), len(action_space)))  # Q-table for model-free agent
-        self.q_mb = np.zeros((len(state_space), len(action_space)))  # Q-table for model-based agent
-        self.q_net = np.zeros((len(state_space), len(action_space)))  # Q-table for model-based agent
+        self.q_td = np.zeros((len(state_space), len(action_space)))  # Q-table for model-free
+        self.q_mb = np.zeros((len(state_space), len(action_space)))  # Q-table for model-based
+        self.q_net = np.zeros((len(state_space), len(action_space)))  # Q-table for hybrid
         self.q_table = self.q_net
 
         # Initialize transition model as a 3D numpy array
@@ -72,9 +72,6 @@ class HybridAgent:
         :param rpe: Reward prediction error
         :return:
         """
-        alpha = self.alpha_1 if state == 0 else self.alpha_2
-        self.q_td[state, action] += alpha * rpe
-
         # Apply the TD update to all state-action pairs using eligibility traces
         for s in range(len(self.state_space)):
             for a in range(len(self.action_space)):
@@ -135,23 +132,20 @@ class HybridAgent:
 
     def get_action_probabilities(self, state):
         beta = self.beta_1 if state == 0 else self.beta_2
-        top_stage_action = True if state == 0 else False
-        return self.softmax(self.q_net[state, :], beta, self.p, top_stage_action, self.previous_action)
+        # top_stage_action = True if state == 0 else False
+        # return self.softmax(self.q_net[state, :], beta, self.p, top_stage_action, self.previous_action)
+        rep_a = np.zeros_like(self.q_net[state, :])
+        if state == 0 and self.previous_action is not None:
+            rep_a[self.previous_action] = 1
+        return self.softmax(self.q_net[state, :], beta, self.p, rep_a)
         # return softmax(self.q_net[state, :], beta)
 
     def policy(self, state, method=None):
         return np.random.choice(self.action_space, p=self.get_action_probabilities(state))
 
-    def softmax(self, q_values, beta, p, top_stage_action=False, previous_action=None):
-        # Calculate the rep(a) based on the current state and previous action
-        rep_a = np.zeros_like(q_values)
-        if top_stage_action and previous_action is not None:
-            rep_a[previous_action] = 1
-
-            # Calculate the exponentiated weighted Q values with the repetition component
-            exp_values = np.exp(beta * (q_values + p * rep_a - np.max(q_values)))
-        else:
-            exp_values = np.exp(beta * (q_values - np.max(q_values)))
+    def softmax(self, q_values, beta, p, rep_a):
+        # Calculate the exponentiated weighted Q values with the repetition component
+        exp_values = np.exp(beta * (q_values + p * rep_a - np.max(q_values)))
 
         # Compute the softmax probabilities
         probabilities = exp_values / np.sum(exp_values)
