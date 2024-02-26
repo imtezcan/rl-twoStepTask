@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from IPython.display import display
 
-
 def random_walk_gaussian(prob, sd, min_prob=0, max_prob=1):
     new_prob = prob + np.random.normal(scale=sd, size=np.shape(prob))
     new_prob = np.clip(new_prob, min_prob, max_prob)
@@ -72,87 +71,6 @@ def calculate_stay_probability(data: pd.DataFrame) -> pd.DataFrame:
         lambda x: np.round(x, 3))
 
     return results, tmp_df
-
-def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]=None, max_plots_per_row=4, save=False, filename="plots/stay_probabilities.png"):
-    sns.set_style("whitegrid")
-
-    if isinstance(dfs, pd.DataFrame) or not isinstance(dfs, list):
-        dfs = [dfs]  # Wrap the single DataFrame in a list
-    if labels is not None and not isinstance(labels, list):
-        labels = [labels]
-
-    n_plots = len(dfs)
-    # Calculate the number of rows and columns for the subplot grid
-    rows = (n_plots - 1) // max_plots_per_row + 1  # Ensure at least one row
-    cols = min(n_plots, max_plots_per_row)  # Max of 4 columns
-    
-    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(6*cols, 6*rows), sharey=True, sharex=True)
-    
-    # If there's only one subplot, axes won't be an array, so we wrap it in a list for consistency
-    if n_plots == 1:
-        axes = [axes]
-    else:
-        # Flatten the axes array to simplify indexing
-        axes = axes.flatten()
-
-    fig.suptitle(title)
-
-    if labels is None:
-        labels = [f"Plot {i}" for i in range(len(dfs))]
-    if len(labels) < len(dfs):
-        labels = labels + [f"Plot {i}" for i in range(len(dfs) - len(labels))]
-    
-    min_stay_prob = np.min([data['Stay Probability'].min() for data in dfs])
-    y_limit_min = 0.5 if min_stay_prob > 0.5 else min_stay_prob - 0.1
-
-    for i, data in enumerate(dfs):
-        ax = axes[i]
-        df = data.copy()
-        # Convert 'Rewarded' to a string type for clear plotting
-        df['Rewarded'] = df['Rewarded'].map({True: 'Rewarded', False: 'Unrewarded'})
-        df['Common'] = df['Common'].map({True: 'Common', False: 'Rare'})
-        # Create the bar plot
-        bar = sns.barplot(x='Rewarded', y='Stay Probability', hue='Common',
-                        data=df, ax=ax,
-                        order=['Rewarded', 'Unrewarded'],
-                        hue_order=['Common', 'Rare'])
-
-        # Set the y-axis limit
-        ax.set_ylim(y_limit_min, 1)
-
-        ax.set_title(labels[i], fontsize=20)
-
-        # Set the size of the legend and the title of the legend
-        ax.legend(title_fontsize='13', fontsize='12')
-
-        # Set the size of the x and y ticks labels
-        ax.tick_params(labelsize=12)
-
-        # Add percentages on top of each bar
-        for p in bar.patches:
-            bar.annotate(format(p.get_height(), '.2f'),
-                        (p.get_x() + p.get_width() / 2., p.get_height()),
-                        ha='center', va='center',
-                        xytext=(0, 10),
-                        textcoords='offset points', fontsize=12)
-            
-        if i >= (n_plots - max_plots_per_row):
-            ax.set_xlabel('Reward', fontsize=15)
-        else:
-            # Hide the x-axis label
-            ax.set_xlabel('', visible=False)
-        if i%max_plots_per_row == 0:
-            ax.set_ylabel('Stay Probability', fontsize=15)
-        else:
-            # Hide the y-axis label
-            ax.set_ylabel('', visible=False)
-
-    fig.tight_layout()
-    fig.subplots_adjust(top=0.9)
-    plt.show()
-    if save:
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        fig.savefig(filename)
     
 def preprocess_human_data(data_df: pd.DataFrame) -> pd.DataFrame:
     data = data_df.copy()
@@ -243,6 +161,163 @@ def calculate_running_step_probabilities(data):
 
     return task_df
 
+def softmax(arr, beta):
+    e_x = np.exp(beta * (arr - np.max(arr)))  # subtract max value to prevent overflow
+    return e_x / e_x.sum(axis=0)  # axis=0 for column-wise operation if arr is 2D, otherwise it's not needed
+
+def calculate_bic(num_params, num_data_points, ll):
+    """
+    Calculates Bayesian Information Criterion to be used in model comparison
+    :param num_params: Number of free parameters that the model has
+    :param num_data_points: Number of data points the model has been fitted to
+    :param ll: Maximum log likelihood estimation for the model given data
+    :return:
+    """
+    return num_params * np.log(num_data_points) - 2 * ll
+
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+# plotting functions
+
+def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]=None, max_plots_per_row=4, save=False, filename="plots/stay_probabilities.png"):
+    sns.set_style("whitegrid")
+
+    if isinstance(dfs, pd.DataFrame) or not isinstance(dfs, list):
+        dfs = [dfs]  # Wrap the single DataFrame in a list
+    if labels is not None and not isinstance(labels, list):
+        labels = [labels]
+
+    n_plots = len(dfs)
+    # Calculate the number of rows and columns for the subplot grid
+    rows = (n_plots - 1) // max_plots_per_row + 1  # Ensure at least one row
+    cols = min(n_plots, max_plots_per_row)  # Max of 4 columns
+    
+    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(6*cols, 6*rows), sharey=True, sharex=True)
+    
+    # If there's only one subplot, axes won't be an array, so we wrap it in a list for consistency
+    if n_plots == 1:
+        axes = [axes]
+    else:
+        # Flatten the axes array to simplify indexing
+        axes = axes.flatten()
+
+    fig.suptitle(title)
+
+    if labels is None:
+        labels = [f"Plot {i}" for i in range(len(dfs))]
+    if len(labels) < len(dfs):
+        labels = labels + [f"Plot {i}" for i in range(len(dfs) - len(labels))]
+    
+    min_stay_prob = np.min([data['Stay Probability'].min() for data in dfs])
+    y_limit_min = 0.5 if min_stay_prob > 0.5 else min_stay_prob - 0.1
+
+    for i, data in enumerate(dfs):
+        ax = axes[i]
+        df = data.copy()
+        # Convert 'Rewarded' to a string type for clear plotting
+        df['Rewarded'] = df['Rewarded'].map({True: 'Rewarded', False: 'Unrewarded'})
+        df['Common'] = df['Common'].map({True: 'Common', False: 'Rare'})
+        # Create the bar plot
+        bar = sns.barplot(x='Rewarded', y='Stay Probability', hue='Common',
+                        data=df, ax=ax,
+                        order=['Rewarded', 'Unrewarded'],
+                        hue_order=['Common', 'Rare'])
+
+        # Set the y-axis limit
+        ax.set_ylim(y_limit_min, 1)
+
+        ax.set_title(labels[i], fontsize=20)
+
+        # Set the size of the legend and the title of the legend
+        ax.legend(title_fontsize='13', fontsize='12')
+
+        # Set the size of the x and y ticks labels
+        ax.tick_params(labelsize=12)
+
+        # Add percentages on top of each bar
+        for p in bar.patches:
+            bar.annotate(format(p.get_height(), '.2f'),
+                        (p.get_x() + p.get_width() / 2., p.get_height()),
+                        ha='center', va='center',
+                        xytext=(0, 10),
+                        textcoords='offset points', fontsize=12)
+            
+        if i >= (n_plots - max_plots_per_row):
+            ax.set_xlabel('Reward', fontsize=15)
+        else:
+            # Hide the x-axis label
+            ax.set_xlabel('', visible=False)
+        if i%max_plots_per_row == 0:
+            ax.set_ylabel('Stay Probability', fontsize=15)
+        else:
+            # Hide the y-axis label
+            ax.set_ylabel('', visible=False)
+
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.9)
+    plt.show()
+    if save:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        fig.savefig(filename)
+
+def calculate_and_plot_diffs(sampled_data_lists, model_titles=None, max_plots_per_row=3, save=False, filename='plots/stay_prob_diffs.png'):
+    n_plots = len(sampled_data_lists)
+    if model_titles is None:
+        model_titles = [f'Model {i}' for i in range(len(sampled_data_lists))]
+    if n_plots != len(model_titles):
+        raise ValueError('sampled_data_lists and model_titles must have the same length')
+    
+    # Initialize a dictionary to hold the mean differences for each model type
+    mean_diffs_all_models = {}
+    
+    # Iterate over each list of sampled data DataFrames and their corresponding title
+    for sampled_data, title in zip(sampled_data_lists, model_titles):
+        diffs = []
+        # Calculate differences for each DataFrame in the current list
+        for stay_prob_df in sampled_data:
+            diff = {}
+            rewarded_common = stay_prob_df.loc[(stay_prob_df['Rewarded']==True) & (stay_prob_df['Common']==True), 'Stay Probability'].values[0]
+            rewarded_rare = stay_prob_df.loc[(stay_prob_df['Rewarded']==True) & (stay_prob_df['Common']==False), 'Stay Probability'].values[0]
+            unrewarded_common = stay_prob_df.loc[(stay_prob_df['Rewarded']==False) & (stay_prob_df['Common']==True), 'Stay Probability'].values[0]
+            unrewarded_rare = stay_prob_df.loc[(stay_prob_df['Rewarded']==False) & (stay_prob_df['Common']==False), 'Stay Probability'].values[0]
+            diff['rewarded_common'] = rewarded_common
+            diff['diff_rewarded_rare'] = rewarded_rare - rewarded_common
+            diff['unrewarded_common'] = unrewarded_common
+            diff['diff_unrewarded_rare'] = unrewarded_rare - unrewarded_common
+            diff['diff_rewarded_unrewarded'] = diff['diff_rewarded_rare'] - diff['diff_unrewarded_rare']
+            diffs.append(diff)
+        
+        # Calculate mean differences for the current model type
+        mean_diffs = {key: np.mean([d[key] for d in diffs]) for key in diffs[0].keys()}
+        mean_diffs_all_models[title] = mean_diffs
+
+    rows = (n_plots - 1) // max_plots_per_row + 1  # Ensure at least one row
+    cols = min(n_plots, max_plots_per_row) 
+    # Plot the differences for each model type
+    fig, axes = plt.subplots(rows, cols, figsize=(5*cols, 5*rows), sharey=True)
+    if n_plots == 1:  # If there's only one model, ensure axes is iterable
+        axes = [axes]
+    axes = axes.flatten()
+
+    # plot the differences for each model
+    for ax, title in zip(axes, model_titles):
+        mean_diffs = mean_diffs_all_models[title]
+        # execlude the rewarded_common and unrewarded_common
+        mean_diffs.pop('rewarded_common', None)
+        mean_diffs.pop('unrewarded_common', None)
+        ax.bar(mean_diffs.keys(), mean_diffs.values())
+        ax.set_title(title)
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
+        ax.axhline(0, color='grey', linewidth=0.8)
+
+    plt.tight_layout()
+    plt.show()
+    if save:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        fig.savefig(filename)
+
 def plot_running_step_probabilities(task_dfs:list, labels:list=None,window_size=1, max_plots_per_row=3, title='', save=False, filename="plots/running_step_probabilities.png"):
     
     if isinstance(task_dfs, pd.DataFrame) or not isinstance(task_dfs, list):
@@ -307,93 +382,22 @@ def plot_running_step_probabilities(task_dfs:list, labels:list=None,window_size=
     if save:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         fig.savefig(filename)
-    
-def softmax(arr, beta):
-    e_x = np.exp(beta * (arr - np.max(arr)))  # subtract max value to prevent overflow
-    return e_x / e_x.sum(axis=0)  # axis=0 for column-wise operation if arr is 2D, otherwise it's not needed
 
-def calculate_bic(num_params, num_data_points, ll):
-    """
-    Calculates Bayesian Information Criterion to be used in model comparison
-    :param num_params: Number of free parameters that the model has
-    :param num_data_points: Number of data points the model has been fitted to
-    :param ll: Maximum log likelihood estimation for the model given data
-    :return:
-    """
-    return num_params * np.log(num_data_points) - 2 * ll
+if __name__ == "__main__":
+    # test the function
+    # load and inspect some human data
+    file_names = ['experiment_data_mj.csv', 'experiment_data_andrei.csv', 
+                'experiment_data_SeEun.csv', 'experiment_data.csv', 'two_steps_experiment_data_muhip.csv']
+    stay_prob_list = []
+    human_data_list = [] 
+    for file_name in file_names:
+        file_name = os.path.join("data", "participants", file_name)
+        human_data = pd.read_csv(file_name)
+        human_data = preprocess_human_data(human_data)
+        human_data_list.append(human_data)
+        
+        stay_probability_h, _ = calculate_stay_probability(human_data)
+        stay_prob_list.append(stay_probability_h)
 
-# def plot_stay_probability(data, title="", save=False, filename="plots/stay_probabilities.png"):
-#     df = data.copy()
-#     # Convert 'Rewarded' to a string type for clear plotting
-#     df['Rewarded'] = df['Rewarded'].map({True: 'Rewarded', False: 'Unrewarded'})
-#     df['Common'] = df['Common'].map({True: 'Common', False: 'Rare'})
-
-#     y_limit_min = 0.5 if df['Stay Probability'].min() > 0.5 else df[
-#                                                                      'Stay Probability'].min() - 0.1
-
-#     sns.set_style("whitegrid")
-
-#     fig, ax = plt.subplots(figsize=(10, 6))
-#     fig.suptitle(title)
-
-#     # Create the bar plot
-#     bar = sns.barplot(x='Rewarded', y='Stay Probability', hue='Common',
-#                       data=df, ax=ax,
-#                       order=['Rewarded', 'Unrewarded'],
-#                       hue_order=['Common', 'Rare'])
-
-#     # Set the y-axis limit
-#     ax.set_ylim(y_limit_min, 1)
-
-#     ax.set_xlabel('Rewarded', fontsize=15)
-#     ax.set_ylabel('Stay Probability', fontsize=15)
-#     ax.set_title('Stay Probability by Reward and Transition Type', fontsize=20)
-
-#     # Set the size of the legend and the title of the legend
-#     ax.legend(title_fontsize='13', fontsize='12')
-
-#     # Set the size of the x and y ticks labels
-#     ax.tick_params(labelsize=12)
-
-#     # Add percentages on top of each bar
-#     for p in bar.patches:
-#         bar.annotate(format(p.get_height(), '.2f'),
-#                      (p.get_x() + p.get_width() / 2., p.get_height()),
-#                      ha='center', va='center',
-#                      xytext=(0, 10),
-#                      textcoords='offset points', fontsize=12)
-
-#     fig.tight_layout()
-#     plt.show()
-#     if save:
-#         os.makedirs(os.path.dirname(filename), exist_ok=True)
-#         fig.savefig(filename)
-
-# def plot_running_step_probabilities(task_df, window_size=1, title='', save=False, filename="plots/running_step_probabilities.png"):
-#     # Create a copy of the DataFrame to avoid modifying the original
-#     df_copy = task_df.copy()
-
-#     # Calculate moving averages on the copy
-#     df_copy['common_rewarded_prob_ma'] = df_copy['common_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
-#     df_copy['common_unrewarded_prob_ma'] = df_copy['common_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
-#     df_copy['rare_rewarded_prob_ma'] = df_copy['rare_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
-#     df_copy['rare_unrewarded_prob_ma'] = df_copy['rare_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
-
-#     fig, ax = plt.subplots(figsize=(12, 8))
-#     fig.suptitle(title)
-#     # Plot each condition's moving average from the copied DataFrame
-#     ax.plot(df_copy['trial_index'], df_copy['common_rewarded_prob_ma'], label='Common Rewarded (MA)', linestyle='-', color='b')
-#     ax.plot(df_copy['trial_index'], df_copy['common_unrewarded_prob_ma'], label='Common Unrewarded (MA)', linestyle='--', color='b')
-#     ax.plot(df_copy['trial_index'], df_copy['rare_rewarded_prob_ma'], label='Rare Rewarded (MA)', linestyle='-', color='orange')
-#     ax.plot(df_copy['trial_index'], df_copy['rare_unrewarded_prob_ma'], label='Rare Unrewarded (MA)', linestyle='--', color='orange')
-
-#     ax.set_title('Running Step Probabilities Over Trials (Moving Average)')
-#     ax.set_xlabel('Trial Index')
-#     ax.set_ylabel('Running Stay Probability (MA)')
-#     ax.legend()
-#     ax.grid()
-
-#     plt.show()
-#     if save:
-#         os.makedirs(os.path.dirname(filename), exist_ok=True)
-#         fig.savefig(filename)
+    stay_prob_list_1 = stay_prob_list.copy()
+    calculate_and_plot_diffs([stay_prob_list, stay_prob_list_1], max_plots_per_row=3)
