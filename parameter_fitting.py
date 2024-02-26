@@ -10,6 +10,7 @@ import os
 import pandas as pd
 from sklearn.model_selection import ParameterSampler
 from itertools import product
+from scipy.optimize import minimize
 
 # calculate the log likelihood of the human data given the model
 def get_action_probs(agent=None, state=None):
@@ -90,32 +91,100 @@ def log_likelihood(agent, data, consider_both_stages=True, verbose=False):
             print('#'*50)
 
     return LogLikelihood_sum
+
+def fit_with_minimize(parammeter_space: dict, human_data, agent_type, consider_both_stages=True, num_initialization=10, verbose=False):
+    param_names = list(parammeter_space.keys())
+    param_bounds = [(np.min(parammeter_space[param]),np.max(parammeter_space[param])) for param in param_names]
+    # take the mean of the bounds as the initial guess
+    def objective_function(params):
+        # create the parameter dictionary
+        params = dict(zip(param_names, params))
+        agent = create_agent(agent_type, params)
+        return -log_likelihood(agent, human_data, consider_both_stages)
+
+    # run the optimization multiple from different starting points and take the best result 
+    best_LL = np.inf
+    best_params = None
+    for i in range(num_initialization):
+        if i == 0:
+            initial_guess = [np.mean(bounds) for bounds in param_bounds]
+        else:
+            initial_guess = [np.random.uniform(low, high) for low, high in param_bounds]
+        LL_result = minimize(objective_function, initial_guess, bounds=param_bounds)
+        if LL_result.fun < best_LL:
+            best_LL = LL_result.fun
+            best_params = dict(zip(param_names, LL_result.x))
+        if verbose:
+            print(f'run: {i}, LL: {-LL_result.fun}, params: {dict(zip(param_names, LL_result.x))}')
+            print('#'*50)
+    return best_params, -best_LL
+
 # LL_for_params_search_space
-def fit_with_grid_search(parammeter_space: dict, human_data, agent_type='random', consider_both_stages=True, verbose=False):
+def fit_with_grid_search(parammeter_space: dict, human_data, agent_type, consider_both_stages=True, verbose=False):
     param_names = list(parammeter_space.keys())
     param_combinations = list(product(*parammeter_space.values()))
     LL_results = np.zeros(len(param_combinations))
     
     for idx, param_vals in enumerate(param_combinations):
         param_dict = dict(zip(param_names, param_vals))
-        
-        if agent_type == 'model_free':
-            agent = AgentModelFree(TwoStepEnv.action_space, TwoStepEnv.state_space, **param_dict)
-        elif agent_type == 'model_based':
-            agent = AgentModelBased(TwoStepEnv.action_space, TwoStepEnv.state_space, **param_dict)
-        elif agent_type == 'hybrid':
-            agent = HybridAgent(TwoStepEnv.action_space, TwoStepEnv.state_space, **param_dict)
-        else:  # Assumes 'random' or any other type defaults to RandomAgent
-            agent = RandomAgent(TwoStepEnv.action_space, TwoStepEnv.state_space)
-        
+        agent = create_agent(agent_type, param_dict)
         LL_results[idx] = log_likelihood(agent, human_data, consider_both_stages, verbose)
     
     # Reshape the results to fit the dimensions of the parameter space
     shape_dims = [len(values) for values in parammeter_space.values()]
     LL_results = LL_results.reshape(*shape_dims)
-    
-    return LL_results
+    # get the best parameters and the best LL
+    best_params_idx = np.unravel_index(LL_results.argmax(), LL_results.shape)
+    best_params = {param: parammeter_space[param][best_params_idx[i]] for i, param in enumerate(parammeter_space.keys())}
+    best_LL = LL_results[best_params_idx]
+    return best_params, best_LL, LL_results
 
+def fit_with_random_search(param_distributions, data, agent_type, num_iterations=100,consider_both_stages=True, seed=0):
+    # Generate parameter samples
+    param_list = list(ParameterSampler(param_distributions, n_iter=num_iterations, random_state=seed))
+
+    # Initialize an empty list for the results
+    results_list = []
+
+    # Evaluate log likelihood for sampled parameter sets
+    for params in param_list:
+        agent = create_agent(agent_type, params)
+        log_likelihood_value = log_likelihood(agent, data, consider_both_stages)
+        results_list.append({**params, 'log_likelihood': log_likelihood_value})
+
+    # Convert to DataFrame
+    results_df = pd.DataFrame(results_list)
+    # get the best parameters and the best LL
+    best_params, best_LL = get_best_params_and_ll(results_df)
+    return best_params, best_LL, results_df
+
+def get_best_params_and_ll(results_df):
+    # Sort the dataframe and get first row
+    sorted_df = results_df.sort_values(by='log_likelihood', ascending=False)
+    best_parameters_row = sorted_df.iloc[0]
+
+    # Extract the best parameters and log likelihood
+    best_params = best_parameters_row.drop('log_likelihood').to_dict()
+    best_log_likelihood = best_parameters_row['log_likelihood']
+
+    return best_params, best_log_likelihood
+
+def create_agent(agent_type, params):
+    if agent_type == 'model_free':
+        agent = AgentModelFree(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
+    elif agent_type == 'model_based':
+        agent = AgentModelBased(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
+    elif agent_type == 'hybrid':
+        agent = HybridAgent(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
+    else:
+        agent = RandomAgent(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
+    return agent
+
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+# plotting functions
 
 # plot the log likelihoods
 def plot_fit_results(LL_results:np.ndarray, parameter_space:dict, full=False, title='', save=False, filename='plots/fit_results.png'):
@@ -123,10 +192,10 @@ def plot_fit_results(LL_results:np.ndarray, parameter_space:dict, full=False, ti
     if num_params == 1:
         plot_fit_results_1d(LL_results, parameter_space, full=full, title=title, save=save, filename=filename)
 
-    if num_params == 2:
+    elif num_params == 2:
         plot_fit_results_2d(LL_results, parameter_space, full=full, title=title, save=save, filename=filename)
     
-    if num_params > 2:
+    elif num_params > 2:
         plot_heatmap_slices(LL_results, parameter_space, full=full, title=title, save=save, filename=filename)
 
     else:
@@ -239,46 +308,3 @@ def plot_heatmap_slices(LL_results, parameter_space, full=False, title='', save=
             if save:
                 filename = filename.split('.')[0] + f'_{param_names[i]}_{param_spaces[i][max_ll_indices[i]]}_{param_names[j]}_{param_spaces[j][max_ll_indices[j]]}.png'
             plot_fit_results_2d(slice_ij, param_space_ij, full, plot_title, save, filename)
-
-
-def fit_with_random_search(agent_type, param_distributions, data, n_iter=100,consider_both_stages=True, seed=0):
-    # Generate parameter samples
-    param_list = list(ParameterSampler(param_distributions, n_iter=n_iter, random_state=seed))
-
-    # Initialize an empty list for the results
-    results_list = []
-
-    # Evaluate log likelihood for sampled parameter sets
-    for params in param_list:
-        agent = create_agent(agent_type, params)
-        log_likelihood_value = log_likelihood(agent, data, consider_both_stages)
-        results_list.append({**params, 'log_likelihood': log_likelihood_value})
-
-    # Convert to DataFrame
-    results_df = pd.DataFrame(results_list)
-
-    return results_df
-
-
-def get_best_params_and_ll(results_df):
-    # Sort the dataframe and get first row
-    sorted_df = results_df.sort_values(by='log_likelihood', ascending=False)
-    best_parameters_row = sorted_df.iloc[0]
-
-    # Extract the best parameters and log likelihood
-    best_params = best_parameters_row.drop('log_likelihood').to_dict()
-    best_log_likelihood = best_parameters_row['log_likelihood']
-
-    return best_params, best_log_likelihood
-
-
-def create_agent(agent_type, params):
-    if agent_type == 'model_free':
-        agent = AgentModelFree(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
-    elif agent_type == 'model_based':
-        agent = AgentModelBased(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
-    elif agent_type == 'hybrid':
-        agent = HybridAgent(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
-    else:
-        agent = RandomAgent(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
-    return agent

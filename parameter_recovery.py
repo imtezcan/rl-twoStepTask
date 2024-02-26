@@ -1,5 +1,5 @@
 from simulate import simulate
-from parameter_fitting import fit_with_grid_search, fit_with_random_search, get_best_params_and_ll
+from parameter_fitting import fit_with_minimize, fit_with_grid_search, fit_with_random_search, get_best_params_and_ll
 from scipy.stats import pearsonr
 from sklearn.model_selection import ParameterSampler
 from scipy.stats import uniform
@@ -9,56 +9,57 @@ import seaborn as sns
 import pandas as pd
 import os
 from tqdm import tqdm
-from typing import Callable
 
 # def param_recovery(agent_type:str, parameter_space:dict, fit_function:Callable, num_runs:int=20, seed:int=0):
-def param_recovery(agent_type:str, parameter_space:dict,  fit_type='grid_search', num_runs:int=20, seed:int=0):
+def param_recovery(agent_type:str, parameter_space:dict,  fit_type='grid_search', num_runs:int=20, seed:int=0, **kwargs):
     if fit_type == 'random_search':
         # sample true parameters from the parameter space 
         true_params = {param: parameter_space[param].rvs(size=num_runs) for param in parameter_space.keys()}
-
-        # print('true params:',true_params)
-        fitted_params = {param : [] for param in parameter_space.keys()}
-        best_LLs = []
-        for run in tqdm(range(num_runs), desc='fitting_runs:', total=num_runs):
-            params = {param : true_params[param][run] for param in parameter_space.keys()}
-            # simulate the data
-            data, _ = simulate(agent_type, params=params, seed=seed)
-            # fit the model to the data
-            fit_results = fit_with_random_search(agent_type, parameter_space, data)
-            # get the best parameters
-            best_params, best_LL = get_best_params_and_ll(fit_results)
-            # store the fitted parameters and the true parameters
-            for param in parameter_space.keys():
-                fitted_params[param].append(best_params[param])
-            best_LLs.append(best_LL)
-            # print(f'run: {run}, alpha: {alpha}, beta: {beta}, best_alpha_mb: {best_alpha_mb}, best_beta_mb: {best_beta_mb}')
-            
-    else:
+    elif fit_type in ['grid_search', 'minimize_search']:
         true_params = {param : np.random.uniform(np.min(parameter_space[param]), np.max(parameter_space[param]), num_runs)
                     for param in parameter_space.keys()}
-
-        # print('true params:',true_params)
-        fitted_params = {param : [] for param in parameter_space.keys()}
-        best_LLs = []
-        for run in tqdm(range(num_runs), desc='fitting_runs:', total=num_runs):
-            params = {param : true_params[param][run] for param in parameter_space.keys()}
-            # simulate the data
-            data, _ = simulate(agent_type, params=params, seed=seed)
-            # fit the model to the data
-            fit_results = fit_with_grid_search(parameter_space, data, agent_type=agent_type)
-            # get the best parameters
-            best_params_idx = np.unravel_index(fit_results.argmax(), fit_results.shape)
-            best_params = {param : parameter_space[param][best_params_idx[i]] for i, param in enumerate(parameter_space.keys())}
-            # get the best LL and the corresponding parameters
-            best_LL = fit_results[best_params_idx]
-            # store the fitted parameters and the true parameters
-            for param in parameter_space.keys():
-                fitted_params[param].append(best_params[param])
-            best_LLs.append(best_LL)
-            # print(f'run: {run}, alpha: {alpha}, beta: {beta}, best_alpha_mb: {best_alpha_mb}, best_beta_mb: {best_beta_mb}')
+    else:
+        raise ValueError(f'fit_type: {fit_type} not supported, use one of : "minimize_search", "random_search", "grid_search"')
+    
+    # print('true params:',true_params)
+    fitted_params = {param : [] for param in parameter_space.keys()}
+    best_LLs = []
+    for run in tqdm(range(num_runs), desc='fitting_runs:', total=num_runs):
+        params = {param : true_params[param][run] for param in parameter_space.keys()}
+        # simulate the data
+        data, _ = simulate(agent_type, params=params, seed=seed)
+        # fit the model to the data
+        if fit_type == 'minimize_search':
+            best_params, best_LL = fit_with_minimize(parameter_space, data, agent_type=agent_type,
+                                            consider_both_stages=kwargs.get('consider_both_stages', True),
+                                            num_initialization=kwargs.get('num_iterations', 10),
+                                            verbose=kwargs.get('verbose', False))
+        elif fit_type == 'random_search':
+            best_params, best_LL, fit_results = fit_with_random_search(parameter_space, data, agent_type=agent_type,
+                                                seed=seed,
+                                                consider_both_stages=kwargs.get('consider_both_stages', True),
+                                                num_iterations=kwargs.get('num_iterations', 10),
+                                                verbose=kwargs.get('verbose', False))
+        elif fit_type == 'grid_search':
+            best_params, best_LL, fit_results = fit_with_grid_search(parameter_space, data, agent_type=agent_type,
+                                                consider_both_stages=kwargs.get('consider_both_stages', True),
+                                                verbose=kwargs.get('verbose', False))
+        else:
+            raise ValueError(f'fit_type: {fit_type} not supported, use one of : "minimize_search", "random_search", "grid_search"')
+        
+        # store the fitted parameters and the true parameters
+        for param in parameter_space.keys():
+            fitted_params[param].append(best_params[param])
+        best_LLs.append(best_LL)
+        # print(f'run: {run}, alpha: {alpha}, beta: {beta}, best_alpha_mb: {best_alpha_mb}, best_beta_mb: {best_beta_mb}')
 
     return fitted_params, true_params, best_LLs
+
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+# plotting functions
 
 def plot_param_recovery(true_params:dict, fitted_params:dict, title='', max_plots_per_row:int=3, save=False, filename:str='plots/param_recovery.png'):
 
@@ -99,7 +100,7 @@ def plot_param_recovery(true_params:dict, fitted_params:dict, title='', max_plot
     if save:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         fig.savefig(filename)
-    
+
 def plot_param_correlation(fitted_params:dict, title='', save=False, filename='plots/recovered_param_correlation.png'):
     # print the correlation uisng scipy pearson
     param_names = list(fitted_params.keys())
@@ -110,12 +111,12 @@ def plot_param_correlation(fitted_params:dict, title='', save=False, filename='p
         return
     
     if num_params == 2:
-        corr_1 = pearsonr(fitted_params[param_names[0]], fitted_params[param_names[1]])
-        print(f'corr_1: {corr_1}')
-
-        fig, ax = plt.subplots(1, figsize=(6, 6))
-        fig.suptitle('Correlation between recovered parameters')
+        corr = pearsonr(fitted_params[param_names[0]], fitted_params[param_names[1]])
+        print(f'corr_1: {corr}')
+        fig, ax = plt.subplots(figsize=(6, 6))
+        fig.suptitle(title + ' Correlation: ' + f'{corr[0]:.3f}')
         sns.scatterplot(data=fitted_params, x=param_names[0], y=param_names[1], ax=ax)
+        # sns.heatmap(corr, annot=True, cmap='RdBu_r', center=0, vmin=-1, vmax=1, ax=ax_2)
         ax.set_title(f'{title}_1')
         plt.show()
 
@@ -124,17 +125,15 @@ def plot_param_correlation(fitted_params:dict, title='', save=False, filename='p
         fitted_params_df = pd.DataFrame(fitted_params)
         corr = fitted_params_df.corr()
         fig, ax = plt.subplots(1, figsize=(6, 6))
-        fig.suptitle('Correlation between recovered parameters')
-        sns.heatmap(corr, annot=True, ax=ax, cmap='RdBu_r', center=0, vmin=-1, vmax=1)
+        fig.suptitle(title + ' Correlation between recovered parameters')
+        sns.heatmap(corr, annot=True, cmap='RdBu_r', center=0, vmin=-1, vmax=1, ax=ax)
         ax.set_title(f'{title}_2')
         plt.show()
 
     if save:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         fig.savefig(filename)
-
     
-
 if __name__ == '__main__':
     # test the plotting functions with random data
     true_params = {'alpha': np.random.uniform(0, 1, 20), 
