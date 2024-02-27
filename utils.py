@@ -176,6 +176,15 @@ def calculate_bic(num_params, num_data_points, ll):
     """
     return num_params * np.log(num_data_points) - 2 * ll
 
+def calculate_aic(num_params, ll):
+    """
+    Calculates Akaike Information Criterion to be used in model comparison
+    :param num_params: Number of free parameters that the model has
+    :param ll: Maximum log likelihood estimation for the model given data
+    :return:
+    """
+    return 2 * num_params - 2 * ll
+
 # ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 # ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 # ---------------------------------------------------------------------------------------------------------------------------------------------------------------

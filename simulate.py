@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 
 
-def simulate(agent_type='random', trials=200, seed=None, verbose=False, params:dict={}):
+def simulate(agent_type='random', trials=200, seed=None, verbose=False, params:dict={}, from_data:pd.DataFrame=None):
     if verbose:
         print(f"Simulating {agent_type} agent, {trials} trials.")
         print(f"Agent parameters: {params if params else 'default'}")
@@ -28,7 +28,7 @@ def simulate(agent_type='random', trials=200, seed=None, verbose=False, params:d
     else:
         agent = RandomAgent(action_space, state_space, **params)
     env = TwoStepEnv()
-    task_data = simulate_two_step_task(env, agent, trials=trials)
+    task_data = simulate_two_step_task(env, agent, trials=trials, from_data=from_data)
 
     # convert the data to a dataframe
     task_df = pd.DataFrame.from_dict(task_data, orient='index')
@@ -38,8 +38,22 @@ def simulate(agent_type='random', trials=200, seed=None, verbose=False, params:d
     return task_df, agent
 
 def simulate_two_step_task(env: TwoStepEnv, agent=None, trials=200,
-                           policy_method="softmax"):
+                           policy_method="softmax", from_data:pd.DataFrame=None):
     env.reset()
+    if from_data is not None:
+        reward_probabilities = from_data['rewardProbabilities'].iloc[0]
+        # reshape the reward probabilities to the correct shape, with zeros for the first stage
+        # self.reward_prob_matrix = np.array(
+        #     [[0, 0],  # first stage (state 0) for both actions
+        #      [p_1_0, p_1_1],  # second stage (state 1) for both actions
+        #      [p_2_0, p_2_1]])  # second stage (state 2) for both actions
+        reward_probabilities = np.array([0, 0, *reward_probabilities])
+        # reshape
+        reward_probabilities = reward_probabilities.reshape((3, 2))
+        print(reward_probabilities)
+        
+        env.set_reward_probabilities(reward_probabilities)
+
     task_data = {}
 
     sd_for_random_walk = 0.025
@@ -63,7 +77,15 @@ def simulate_two_step_task(env: TwoStepEnv, agent=None, trials=200,
         info['trial_index'] = int(time_step)
         task_data[time_step] = info
         env.reset()
-        new_reward_prob_matrix = random_walk_gaussian(env.reward_prob_matrix,
+        if from_data is not None and time_step < trials - 1:
+            new_reward_prob_matrix = from_data['rewardProbabilities'].iloc[time_step + 1]
+            # include zeros for the first stage
+            new_reward_prob_matrix = np.array([0, 0, *new_reward_prob_matrix])
+            # reshape to the epxpected shape (3, 2): state-action
+            new_reward_prob_matrix = new_reward_prob_matrix.reshape((3, 2))
+            print(new_reward_prob_matrix)
+        else:    
+            new_reward_prob_matrix = random_walk_gaussian(env.reward_prob_matrix,
                                                       sd_for_random_walk)
         env.set_reward_probabilities(new_reward_prob_matrix)
         time_step += 1
