@@ -1,15 +1,14 @@
-import pandas as pd
-import numpy as np
-
 from agents.model_based import AgentModelBased
 from agents.model_free import AgentModelFree
 from agents.hybrid import HybridAgent
 from agents.random_agent import RandomAgent
 from environment import TwoStepEnv
 from utils import random_walk_gaussian
+import pandas as pd
+import numpy as np
 
 
-def simulate(agent_type='random', trials=200, seed=0, verbose=False, params:dict={}):
+def simulate(agent_type='random', trials=200, seed=None, verbose=False, params:dict={}):
     if verbose:
         print(f"Simulating {agent_type} agent, {trials} trials.")
         print(f"Agent parameters: {params if params else 'default'}")
@@ -24,7 +23,7 @@ def simulate(agent_type='random', trials=200, seed=0, verbose=False, params:dict
         agent = AgentModelBased(action_space, state_space, **params)
     elif agent_type == 'model_free':
         agent = AgentModelFree(action_space, state_space, **params)
-    elif agent_type == 'hybrid':
+    elif agent_type == 'hybrid' or agent_type.startswith('hybrid'):
         agent = HybridAgent(action_space, state_space, **params)
     else:
         agent = RandomAgent(action_space, state_space, **params)
@@ -34,6 +33,8 @@ def simulate(agent_type='random', trials=200, seed=0, verbose=False, params:dict
     # convert the data to a dataframe
     task_df = pd.DataFrame.from_dict(task_data, orient='index')
 
+    # unset the random seed
+    np.random.seed(None)
     return task_df, agent
 
 def simulate_two_step_task(env: TwoStepEnv, agent=None, trials=200,

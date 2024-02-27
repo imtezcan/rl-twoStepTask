@@ -30,6 +30,26 @@ def save_simulated_data(task_df: pd.DataFrame, agent_type: str):
     os.makedirs(file_path, exist_ok=True)
     filename = os.path.join(file_path, "simulated_data.csv")
     task_df.to_csv(filename, index=False)
+    print("Data saved to", filename)
+
+def preprocess_human_data(data_df: pd.DataFrame) -> pd.DataFrame:
+    data = data_df.copy()
+    # infer common transition from the action taken in stage 1 and isHighProbOne/Two
+    data['common_transition'] = np.where(data['stepOneChoice'] == 0,
+                                            data['isHighProbOne'],
+                                            data['isHighProbTwo'])
+
+    # infer the state transition to from the action taken in stage 2
+    data['state_transition_to'] = (data['stepTwoChoice'] // 2) + 1  # 1 if choice is 0 or 1. 2 if choice is 2 or 3
+
+    # convert the rewardProbabilities to a list
+    data['rewardProbabilities'] = data['rewardProbabilities'].apply(
+        lambda x: np.array([float(i) for i in x.strip('[]').replace(',', ' ').split()]))
+    
+    # convert stepTwoChoice from range 0-3 to 0-1
+    data['stepTwoChoice'] = data['stepTwoChoice'] % 2
+
+    return data
 
 def calculate_stay_probability(data: pd.DataFrame) -> pd.DataFrame:
     # get a copy of the data
@@ -71,25 +91,6 @@ def calculate_stay_probability(data: pd.DataFrame) -> pd.DataFrame:
         lambda x: np.round(x, 3))
 
     return results, tmp_df
-    
-def preprocess_human_data(data_df: pd.DataFrame) -> pd.DataFrame:
-    data = data_df.copy()
-    # infer common transition from the action taken in stage 1 and isHighProbOne/Two
-    data['common_transition'] = np.where(data['stepOneChoice'] == 0,
-                                            data['isHighProbOne'],
-                                            data['isHighProbTwo'])
-
-    # infer the state transition to from the action taken in stage 2
-    data['state_transition_to'] = (data['stepTwoChoice'] // 2) + 1  # 1 if choice is 0 or 1. 2 if choice is 2 or 3
-
-    # convert the rewardProbabilities to a list
-    data['rewardProbabilities'] = data['rewardProbabilities'].apply(
-        lambda x: np.array([float(i) for i in x.strip('[]').replace(',', ' ').split()]))
-    
-    # convert stepTwoChoice from range 0-3 to 0-1
-    data['stepTwoChoice'] = data['stepTwoChoice'] % 2
-
-    return data
 
 def print_simple_statistics(data: pd.DataFrame, full=False, title=""):
     # print some statistics 
@@ -260,7 +261,11 @@ def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]
     plt.show()
     if save:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
+        # add timestamp to filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = filename.replace('.png', f'_{timestamp}.png')
         fig.savefig(filename)
+        print(f'Plot saved to {filename}')
 
 def calculate_and_plot_diffs(sampled_data_lists, model_titles=None, max_plots_per_row=3, save=False, filename='plots/stay_prob_diffs.png'):
     n_plots = len(sampled_data_lists)
@@ -316,7 +321,11 @@ def calculate_and_plot_diffs(sampled_data_lists, model_titles=None, max_plots_pe
     plt.show()
     if save:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
+        # add timestamp to filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = filename.replace('.png', f'_{timestamp}.png')
         fig.savefig(filename)
+        print(f'Plot saved to {filename}')
 
 def plot_running_step_probabilities(task_dfs:list, labels:list=None,window_size=1, max_plots_per_row=3, title='', save=False, filename="plots/running_step_probabilities.png"):
     
@@ -381,7 +390,11 @@ def plot_running_step_probabilities(task_dfs:list, labels:list=None,window_size=
     plt.show()
     if save:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
+        # add timestamp to filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = filename.replace('.png', f'_{timestamp}.png')
         fig.savefig(filename)
+        print(f'Plot saved to {filename}')
 
 if __name__ == "__main__":
     # test the function

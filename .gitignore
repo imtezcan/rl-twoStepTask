@@ -1,6 +1,6 @@
 # data
 data/
-
+plots/
 #logs
 *.log
 log.txt

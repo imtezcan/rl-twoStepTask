@@ -4,13 +4,18 @@ from agents.model_free import AgentModelFree
 from agents.model_based import AgentModelBased
 from agents.hybrid import HybridAgent
 from environment import TwoStepEnv
+from sklearn.model_selection import ParameterSampler
+from itertools import product
+from scipy.optimize import minimize
+from scipy.stats import uniform
+from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 import pandas as pd
-from sklearn.model_selection import ParameterSampler
-from itertools import product
-from scipy.optimize import minimize
+# from tqdm import tqdm
+# import the tqdm library combpatibilitle with jupyter notebook
+from tqdm.notebook import tqdm
 
 # calculate the log likelihood of the human data given the model
 def get_action_probs(agent=None, state=None):
@@ -34,7 +39,7 @@ def apply_choices(agent=None, stage_1=None, stage_2=None, recieved_reward=None):
 def average_accumulated_reward(data):
     return data['reward'].mean()
 
-def fit_to_average_accumulated_reward(parammeter_space: dict, agent_type='randome', seed=0, verbose=False):
+def fit_to_average_accumulated_reward(parammeter_space: dict, agent_type='randome', seed=None, verbose=False):
     param_names = [name for name in list(parammeter_space.keys())]
     param_values = [values for values in list(parammeter_space.values())]
     n1 = param_names[0]
@@ -49,9 +54,9 @@ def fit_to_average_accumulated_reward(parammeter_space: dict, agent_type='random
     return accumulated_reward_results
 
 
-def log_likelihood(agent, data, consider_both_stages=True, verbose=False):
+def log_likelihood(agent, data, consider_both_stages=True, verbose=False, show_progress=False):
     LogLikelihood_sum = 0
-    for idx, trial_data in data.iterrows():
+    for idx, trial_data in tqdm(data.iterrows(), desc='log_likelihood:', total=len(data), disable=not show_progress, leave=False):
         chosen_action_1 = trial_data['stepOneChoice']
         chosen_action_2 = trial_data['stepTwoChoice']
         stage_1_state = 0
@@ -92,7 +97,8 @@ def log_likelihood(agent, data, consider_both_stages=True, verbose=False):
 
     return LogLikelihood_sum
 
-def fit_with_minimize(parammeter_space: dict, human_data, agent_type, consider_both_stages=True, num_initialization=10, verbose=False):
+def fit_with_minimize(parammeter_space: dict, data, agent_type, consider_both_stages=True, num_initializations=10,
+                    verbose=False, show_progress=False):
     param_names = list(parammeter_space.keys())
     param_bounds = [(np.min(parammeter_space[param]),np.max(parammeter_space[param])) for param in param_names]
     # take the mean of the bounds as the initial guess
@@ -100,12 +106,12 @@ def fit_with_minimize(parammeter_space: dict, human_data, agent_type, consider_b
         # create the parameter dictionary
         params = dict(zip(param_names, params))
         agent = create_agent(agent_type, params)
-        return -log_likelihood(agent, human_data, consider_both_stages)
+        return -log_likelihood(agent, data, consider_both_stages)
 
     # run the optimization multiple from different starting points and take the best result 
     best_LL = np.inf
     best_params = None
-    for i in range(num_initialization):
+    for i in tqdm(range(num_initializations), desc='initializations:', total=num_initializations, disable=not show_progress, leave=True):
         if i == 0:
             initial_guess = [np.mean(bounds) for bounds in param_bounds]
         else:
@@ -120,15 +126,16 @@ def fit_with_minimize(parammeter_space: dict, human_data, agent_type, consider_b
     return best_params, -best_LL
 
 # LL_for_params_search_space
-def fit_with_grid_search(parammeter_space: dict, human_data, agent_type, consider_both_stages=True, verbose=False):
+def fit_with_grid_search(parammeter_space: dict, data, agent_type, consider_both_stages=True,
+                        verbose=False, show_progress=False):
     param_names = list(parammeter_space.keys())
     param_combinations = list(product(*parammeter_space.values()))
     LL_results = np.zeros(len(param_combinations))
     
-    for idx, param_vals in enumerate(param_combinations):
+    for idx, param_vals in tqdm(enumerate(param_combinations), desc='grid_search:', total=len(param_combinations), disable=not show_progress, leave=False):
         param_dict = dict(zip(param_names, param_vals))
         agent = create_agent(agent_type, param_dict)
-        LL_results[idx] = log_likelihood(agent, human_data, consider_both_stages, verbose)
+        LL_results[idx] = log_likelihood(agent, data, consider_both_stages, verbose)
     
     # Reshape the results to fit the dimensions of the parameter space
     shape_dims = [len(values) for values in parammeter_space.values()]
@@ -139,7 +146,8 @@ def fit_with_grid_search(parammeter_space: dict, human_data, agent_type, conside
     best_LL = LL_results[best_params_idx]
     return best_params, best_LL, LL_results
 
-def fit_with_random_search(param_distributions, data, agent_type, num_iterations=100,consider_both_stages=True, seed=0):
+def fit_with_random_search(param_distributions, data, agent_type, num_iterations=100,consider_both_stages=True, seed=0,
+                           verbose=False, show_progress=False):
     # Generate parameter samples
     param_list = list(ParameterSampler(param_distributions, n_iter=num_iterations, random_state=seed))
 
@@ -147,7 +155,7 @@ def fit_with_random_search(param_distributions, data, agent_type, num_iterations
     results_list = []
 
     # Evaluate log likelihood for sampled parameter sets
-    for params in param_list:
+    for params in tqdm(param_list, desc='random_search:', total=len(param_list), disable=not show_progress, leave=False):
         agent = create_agent(agent_type, params)
         log_likelihood_value = log_likelihood(agent, data, consider_both_stages)
         results_list.append({**params, 'log_likelihood': log_likelihood_value})
@@ -174,7 +182,7 @@ def create_agent(agent_type, params):
         agent = AgentModelFree(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
     elif agent_type == 'model_based':
         agent = AgentModelBased(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
-    elif agent_type == 'hybrid':
+    elif agent_type == 'hybrid' or agent_type.startswith('hybrid'):
         agent = HybridAgent(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
     else:
         agent = RandomAgent(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
@@ -213,7 +221,11 @@ def plot_fit_results_1d(LL_results:np.ndarray, parameter_space:dict, full=False,
     plt.show()
     if save:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
+        # add timestamp to filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = filename.replace('.png', f'_{timestamp}.png')
         fig.savefig(filename)
+        print(f'Plot saved to {filename}')
 
 def plot_fit_results_2d(LL_results, parameter_space:dict, full=False, title='', save=False, filename='plots/fit_results.png'):
     if len(parameter_space) != 2:
@@ -245,7 +257,11 @@ def plot_fit_results_2d(LL_results, parameter_space:dict, full=False, title='', 
         if save:
             os.makedirs(os.path.dirname(filename), exist_ok=True)
             filename = filename.split('.')[0] + '_full.png'
+            # add timestamp to filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = filename.replace('.png', f'_{timestamp}.png')
             fig.savefig(filename)
+            print(f'Plot saved to {filename}')
 
     fig, ax = plt.subplots(figsize=(10, 6))
     fig.suptitle(title)
@@ -282,7 +298,11 @@ def plot_fit_results_2d(LL_results, parameter_space:dict, full=False, title='', 
     plt.show()
     if save:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
+        # add timestamp to filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = filename.replace('.png', f'_{timestamp}.png')
         fig.savefig(filename)
+        print(f'Plot saved to {filename}')
 
 def plot_heatmap_slices(LL_results, parameter_space, full=False, title='', save=False, filename='plots/fit_results.png'):
     num_params = len(parameter_space)

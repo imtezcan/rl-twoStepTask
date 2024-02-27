@@ -148,12 +148,32 @@ class HybridAgent:
         if top_stage_action and previous_action is not None:
             rep_a[previous_action] = 1
 
+            adjusted_q_values = (q_values + p * rep_a - np.max(q_values))
             # Calculate the exponentiated weighted Q values with the repetition component
-            exp_values = np.exp(beta * (q_values + p * rep_a - np.max(q_values)))
+            exp_values = np.exp(beta * adjusted_q_values)
         else:
-            exp_values = np.exp(beta * (q_values - np.max(q_values)))
+            adjusted_q_values = (q_values - np.max(q_values))
+            exp_values = np.exp(beta * adjusted_q_values)
 
+        # insure no division by zero and no 0 probabilities
+        exp_values += 1e-8
+        exp_values_sum = np.sum(exp_values, axis=0)
+        
+        if np.any(np.isinf(exp_values) | np.isnan(exp_values)):
+            print('#### SOFTMAX ERROR')
+            # print agent hyperparameters
+            print(f'alpha_1 = {self.alpha_1}, alpha_2 = {self.alpha_2}, beta_1 = {self.beta_1}, beta_2 = {self.beta_2}, w = {self.w}, p = {self.p}, _lambda = {self._lambda}')
+            # print function arguments
+            print(f'q_values = {q_values}, beta = {beta}, p = {p}, top_stage_action = {top_stage_action}, previous_action = {previous_action}')
+            print('#' * 100)
+            print('exp_values contains:', exp_values)
+            print('#' * 100)
+
+        if exp_values_sum == 0 or exp_values_sum in [np.nan, np.inf, -np.inf]:
+            print('#' * 100)
+            print('exp_values_sum is zero')
+            print('#' * 100)
         # Compute the softmax probabilities
-        probabilities = exp_values / np.sum(exp_values)
+        probabilities = exp_values / exp_values.sum(axis=0)
 
         return probabilities
