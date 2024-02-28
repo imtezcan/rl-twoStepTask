@@ -123,7 +123,7 @@ def fit_with_MCMC(parammeter_space: dict, data, agent_type, consider_both_stages
     best_params, best_LL = get_best_params_and_ll(results_df)
     return best_params, best_LL, results_df
 
-
+# if more than one chain, applay in external loop
 def fit_with_MCMC(parammeter_space, data, agent_type, consider_both_stages=True, num_samples=1000, num_burn_in=100, verbose=False, show_progress=False):
     sampling_sd = 0.1
     param_names = list(parammeter_space.keys())
