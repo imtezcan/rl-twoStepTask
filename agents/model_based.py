@@ -2,8 +2,8 @@ import numpy as np
 
 
 class AgentModelBased:
-    def __init__(self, action_space, state_space, alpha=0.1, gamma=0.9, beta=1.0,
-                 epsilon=0.2):
+    def __init__(self, action_space, state_space, alpha=0.1, beta=1.0,
+                 epsilon=0.2, gamma=0.9):
         self.action_space = action_space
         self.state_space = state_space
         self.alpha = alpha  # Learning rate
@@ -64,7 +64,7 @@ class AgentModelBased:
             #                                     current_state, action, :] + 1
             #                                     ) / total_transitions          
                 
-            # TODO integrate high-low update below
+            # TODO integrate high-low update below with parameterized P_COMMON
             # # high-low update
             P_COMMON = 0.7
             # self.transition_model[current_state, action, 0] = 0
@@ -123,10 +123,17 @@ class AgentModelBased:
         self.update_transition_model(state, action, next_state, terminal)
         self.update_q_table(state, action, reward, next_state, terminal)
 
-    def reset(self):
-        pass
-
     def get_action_probabilities(self, state):
         q_values = self.q_table[state, :]
         action_probabilities = self.softmax(q_values, self.beta)
         return action_probabilities
+    
+    def reset(self):
+        self.q_table = np.zeros((len(self.state_space), len(self.action_space)))
+        self.transition_model = np.zeros((len(self.state_space),
+                                          len(self.action_space),
+                                          len(self.state_space)))
+        self.transition_counts = np.zeros((len(self.state_space),
+                                           len(self.action_space),
+                                           len(self.state_space)))
+        # return self.q_table, self.transition_model, self.transition_counts

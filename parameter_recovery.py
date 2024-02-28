@@ -1,17 +1,20 @@
 from simulate import simulate
 from parameter_fitting import fit_with_minimize, fit_with_grid_search, fit_with_random_search, get_best_params_and_ll
 from scipy.stats import pearsonr
+import numpy as np
+import pandas as pd
 from sklearn.model_selection import ParameterSampler
 from scipy.stats import uniform
-import numpy as np
-import matplotlib.pyplot as plt
 import seaborn as sns
-import pandas as pd
+import matplotlib.pyplot as plt
 import os
-from tqdm import tqdm
+from datetime import datetime
+# from tqdm import tqdm
+# import the tqdm library combpatibilitle with jupyter notebook
+from tqdm.notebook import tqdm
 
-# def param_recovery(agent_type:str, parameter_space:dict, fit_function:Callable, num_runs:int=20, seed:int=0):
-def param_recovery(agent_type:str, parameter_space:dict,  fit_type='grid_search', num_runs:int=20, seed:int=0, **kwargs):
+def param_recovery(agent_type:str, parameter_space:dict,  fit_type='grid_search', num_runs:int=20,
+                    seed:int=None, show_progress=True, **kwargs):
     if fit_type == 'random_search':
         # sample true parameters from the parameter space 
         true_params = {param: parameter_space[param].rvs(size=num_runs) for param in parameter_space.keys()}
@@ -24,15 +27,15 @@ def param_recovery(agent_type:str, parameter_space:dict,  fit_type='grid_search'
     # print('true params:',true_params)
     fitted_params = {param : [] for param in parameter_space.keys()}
     best_LLs = []
-    for run in tqdm(range(num_runs), desc='fitting_runs:', total=num_runs):
+    for run in tqdm(range(num_runs), desc='fitting_runs:', total=num_runs, disable=not show_progress, leave=True):
         params = {param : true_params[param][run] for param in parameter_space.keys()}
         # simulate the data
         data, _ = simulate(agent_type, params=params, seed=seed)
         # fit the model to the data
         if fit_type == 'minimize_search':
-            best_params, best_LL = fit_with_minimize(parameter_space, data, agent_type=agent_type,
+            best_params, best_LL, fit_results = fit_with_minimize(parameter_space, data, agent_type=agent_type,
                                             consider_both_stages=kwargs.get('consider_both_stages', True),
-                                            num_initialization=kwargs.get('num_iterations', 10),
+                                            num_initializations=kwargs.get('num_iterations', 10),
                                             verbose=kwargs.get('verbose', False))
         elif fit_type == 'random_search':
             best_params, best_LL, fit_results = fit_with_random_search(parameter_space, data, agent_type=agent_type,
@@ -99,7 +102,11 @@ def plot_param_recovery(true_params:dict, fitted_params:dict, title='', max_plot
     plt.show()
     if save:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
+        # add timestamp to filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = filename.replace('.png', f'_{timestamp}.png')
         fig.savefig(filename)
+        print(f'Plot saved to {filename}')
 
 def plot_param_correlation(fitted_params:dict, title='', save=False, filename='plots/recovered_param_correlation.png'):
     # print the correlation uisng scipy pearson
@@ -132,7 +139,12 @@ def plot_param_correlation(fitted_params:dict, title='', save=False, filename='p
 
     if save:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
+        # add timestamp to filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = filename.replace('.png', f'_{timestamp}.png')
         fig.savefig(filename)
+        print(f'Plot saved to {filename}')
+
     
 if __name__ == '__main__':
     # test the plotting functions with random data

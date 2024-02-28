@@ -3,8 +3,6 @@ import numpy as np
 
 # environment of the experiment
 class TwoStepEnv:
-    # TODO
-    # - random seed
     action_space = [0, 1]
     state_space = [0, 1, 2]
 
@@ -24,8 +22,6 @@ class TwoStepEnv:
             [[0, self.transition_prob, 1 - self.transition_prob],  # action left
              [0, 1 - self.transition_prob, self.transition_prob]])  # action right
 
-        # self.seed = 0
-        # np.random.seed(self.seed)
         self.min_reward_prob = 0.25
         self.max_reward_prob = 0.75
         # matrix of reward probabilities
@@ -36,10 +32,6 @@ class TwoStepEnv:
         p_1_1 = np.random.uniform(self.min_reward_prob, self.max_reward_prob)
         p_2_0 = np.random.uniform(self.min_reward_prob, self.max_reward_prob)
         p_2_1 = np.random.uniform(self.min_reward_prob, self.max_reward_prob)
-        # p_1_0 = 0.75
-        # p_1_1 = 0.75
-        # p_2_0 = 0.25
-        # p_2_1 = 0.25
 
         self.reward_prob_matrix = np.array(
             [[0, 0],  # first stage (state 0) for both actions
@@ -51,7 +43,10 @@ class TwoStepEnv:
         self.fixed_reward_prob_matrix = np.array([[1, 1],
                                                   [0, 0],
                                                   [0, 0]])
-
+        # disribution of rewards according to the reward probabilities
+        self.reward_distribution = np.zeros_like(self.reward_prob_matrix)
+        self.update_reward_distribution()
+  
     def reset(self):
         self.state = 0
         self.terminal = False
@@ -71,6 +66,8 @@ class TwoStepEnv:
             self.state = np.random.choice(self.state_space,
                                           p=self.stage_1_transition_matrix[action])
 
+            # update the info
+            # self.info["reward_stage_1"] = reward > 0
             self.info["common_transition"] = self.is_common_state(self.state, action)
             self.info["state_transition_to"] = self.state
             self.info["stepOneChoice"] = action
@@ -79,10 +76,12 @@ class TwoStepEnv:
         elif self.state in [1, 2]:
             reward = self.reward_function(self.state, action)
             self.terminal = True
+            # update the info
             self.info["reward"] = reward > 0
             self.info["stepTwoChoice"] = action
             # [2:] -> take the reward probabilities for the second stage only
             self.info["rewardProbabilities"] = self.reward_prob_matrix.flatten()[2:]
+            self.info["rewardDistribution"] = self.reward_distribution.flatten()[2:]
 
 
         else:
@@ -99,12 +98,14 @@ class TwoStepEnv:
             raise ValueError(
                 f"state:{state} is an invalid state, state space: {self.state_space}")
 
+        self.update_reward_distribution() # get reward through the reward distribution for possible further analysis of the task
         # give a reward according to the probability of getting a reward
         # for the action taken in the state ( state-action pair )
-        reward = np.random.uniform() < self.reward_prob_matrix[state][action]
+        reward = self.reward_distribution[state][action]
+        # reward = np.random.uniform() < self.reward_prob_matrix[state][action]
         # scale the reward for a costume reward value equal to self.reward
         # makes no difference in case self.reward = 1
-        reward = reward * self.reward
+        reward = int(reward) * self.reward
         return reward
 
     def state_transition_function(self, state, action):
@@ -137,6 +138,11 @@ class TwoStepEnv:
         return self.stage_1_transition_matrix[action, state] == np.max(
             self.stage_1_transition_matrix[action])
 
+    def update_reward_distribution(self):
+        self.reward_distribution = np.random.uniform(size=self.reward_prob_matrix.shape) < self.reward_prob_matrix
+        self.reward_distribution = self.reward_distribution.astype(float)
+        return self.reward_distribution
+                
     def set_reward_probabilities(self, reward_prob_matrix):
         if reward_prob_matrix.shape != self.reward_prob_matrix.shape:
             raise ValueError(
@@ -151,6 +157,13 @@ class TwoStepEnv:
                                            self.reward_prob_matrix, reward_prob_matrix)
         return self.reward_prob_matrix
 
+    def set_reward_distribution(self, reward_distribution):
+        if reward_distribution.shape != self.reward_distribution.shape:
+            raise ValueError(
+                f"reward_distribution shape: {reward_distribution.shape} is not valid, shape should be {self.reward_distribution.shape}")
+        self.reward_distribution = reward_distribution
+        return self.reward_distribution
+              
     def set_seed(self, seed):
         pass
 
