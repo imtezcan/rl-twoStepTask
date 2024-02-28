@@ -32,9 +32,9 @@ class HybridAgent:
         self.w = w
         self.p = p
 
-        self.q_td = np.zeros((len(state_space), len(action_space)))  # Q-table for model-free agent
-        self.q_mb = np.zeros((len(state_space), len(action_space)))  # Q-table for model-based agent
-        self.q_net = np.zeros((len(state_space), len(action_space)))  # Q-table for model-based agent
+        self.q_td = np.zeros((len(state_space), len(action_space)))  # Q-table for model-free
+        self.q_mb = np.zeros((len(state_space), len(action_space)))  # Q-table for model-based
+        self.q_net = np.zeros((len(state_space), len(action_space)))  # Q-table for hybrid
         self.q_table = self.q_net
 
         # Initialize transition model as a 3D numpy array
@@ -71,7 +71,7 @@ class HybridAgent:
         :param rpe: Reward prediction error
         :return:
         """
-
+        
         # alpha = self.alpha_1 if state == 0 else self.alpha_2
         # self.q_td[state, action] += alpha * rpe
 
@@ -137,8 +137,12 @@ class HybridAgent:
 
     def get_action_probabilities(self, state):
         beta = self.beta_1 if state == 0 else self.beta_2
-        top_stage_action = True if state == 0 else False
-        return self.softmax(self.q_net[state, :], beta, self.p, top_stage_action, self.previous_action)
+        # top_stage_action = True if state == 0 else False
+        # return self.softmax(self.q_net[state, :], beta, self.p, top_stage_action, self.previous_action)
+        rep_a = np.zeros_like(self.q_net[state, :])
+        if state == 0 and self.previous_action is not None:
+            rep_a[self.previous_action] = 1
+        return self.softmax(self.q_net[state, :], beta, self.p, rep_a)
         # return softmax(self.q_net[state, :], beta)
 
     def policy(self, state, method=None):
@@ -173,6 +177,7 @@ class HybridAgent:
             print('#' * 100)
             print('exp_values_sum is zero')
             print('#' * 100)
+            
         # Compute the softmax probabilities
         probabilities = exp_values / exp_values.sum(axis=0)
 
