@@ -2,14 +2,14 @@ import numpy as np
 
 
 class AgentModelFree:
-    def __init__(self, action_space, state_space, alpha=0.1, gamma=0.9, beta=1.0):
+    def __init__(self, action_space, state_space, alpha=0.1, beta=1.0, epsilon=0.2, gamma=0.9):
         # the state space can be infered but here it is given for simplicity
         self.action_space = action_space
         self.state_space = state_space
         self.alpha = alpha  # Learning rate
         self.gamma = gamma  # Discount factor
         self.beta = beta  # Temperature parameter for softmax policy
-        self.epsilon = 0.2  # Epsilon for epsilon-greedy policy
+        self.epsilon = epsilon  # Epsilon for epsilon-greedy policy
         self.q_table = np.zeros((len(self.state_space), len(self.action_space)))
 
     def softmax(self, arr, beta):
@@ -65,11 +65,11 @@ class AgentModelFree:
     def update_beliefs(self, state, action, reward, next_state, terminal):
         self.update_q_table_sarsa(state, action, reward, next_state, terminal)
 
-    def reset(self):
-        pass
-
     def get_action_probabilities(self, state):
         q_values = self.q_table[state, :]
         action_probabilities = self.softmax(q_values, self.beta)
         return action_probabilities
 
+    def reset(self):
+        self.q_table = np.zeros((len(self.state_space), len(self.action_space)))
+        # return self.q_table

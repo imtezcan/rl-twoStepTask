@@ -32,8 +32,42 @@ def save_simulated_data(task_df: pd.DataFrame, agent_type: str):
     task_df.to_csv(filename, index=False)
     print("Data saved to", filename)
 
+def convert_1d_numeric_string_array_to_array(string_array: str) -> np.array:
+    return np.array([float(i) for i in string_array.strip('[]').replace(',', ' ').split()])
+
+def detect_and_convert_1d_string_array(string_array: str):
+    # Remove the outer brackets and split by ',' to handle both 1D and multidimensional arrays
+    elements = string_array.strip('[]').replace(' ', '').split(',')
+    # Attempt to determine the type of each element
+    converted_elements = []
+    for element in elements:
+        if element.lower() in ['true', 'false']:
+            # Convert string to boolean
+            converted_elements.append(element.lower() == 'true')
+        else:
+            try:
+                # Attempt to convert string to float
+                converted_elements.append(float(element))
+            except ValueError:
+                # Handle the case where the conversion is not possible
+                raise ValueError(f"Element {element} is neither a recognizable number nor a boolean value.")
+    # Determine if the array is boolean or numeric based on the types of converted elements
+    if all(isinstance(el, bool) for el in converted_elements):
+        result_array = np.array(converted_elements, dtype=bool)
+    elif all(isinstance(el, (int, float)) for el in converted_elements):
+        # Convert elements to float if mixed types (e.g., boolean and numbers) or all numbers
+        result_array = np.array(converted_elements, dtype=float)
+    else:
+        print(f"Array contains mixed types: {converted_elements}")
+        result_array = np.array(converted_elements)
+        print(f"Array converted to default type: {result_array.dtype}")
+    return result_array
+
 def preprocess_human_data(data_df: pd.DataFrame) -> pd.DataFrame:
     data = data_df.copy()
+    
+    # rename column reward_Param to rewardDistribution
+    data.rename(columns={'rewards_Param': 'rewardDistribution'}, inplace=True)
     # infer common transition from the action taken in stage 1 and isHighProbOne/Two
     data['common_transition'] = np.where(data['stepOneChoice'] == 0,
                                             data['isHighProbOne'],
@@ -42,125 +76,16 @@ def preprocess_human_data(data_df: pd.DataFrame) -> pd.DataFrame:
     # infer the state transition to from the action taken in stage 2
     data['state_transition_to'] = (data['stepTwoChoice'] // 2) + 1  # 1 if choice is 0 or 1. 2 if choice is 2 or 3
 
-    # convert the rewardProbabilities to a list
-    data['rewardProbabilities'] = data['rewardProbabilities'].apply(
-        lambda x: np.array([float(i) for i in x.strip('[]').replace(',', ' ').split()]))
+    # convert the rewardProbabilities from string to a array
+    data['rewardProbabilities'] = data['rewardProbabilities'].apply(detect_and_convert_1d_string_array)
+    
+    # convert the rewardDistribution from string a array
+    data['rewardDistribution'] = data['rewardDistribution'].apply(detect_and_convert_1d_string_array)
     
     # convert stepTwoChoice from range 0-3 to 0-1
     data['stepTwoChoice'] = data['stepTwoChoice'] % 2
 
     return data
-
-def calculate_stay_probability(data: pd.DataFrame) -> pd.DataFrame:
-    # get a copy of the data
-    tmp_df = data.copy()
-
-    # flag for the repeated action (stage 1), same action as the previous trial
-    tmp_df['repeated_stepOneAction'] = tmp_df['stepOneChoice'].shift(1) == tmp_df[
-        'stepOneChoice']
-    
-    # flag for the repeated action (stage 1), same action as the next trial (to calculate the stay probability)
-    tmp_df['repeated_stepOneAction_next'] = tmp_df['repeated_stepOneAction'].shift(-1)
-    
-    # discard last trial (no next trial to compare with)
-    tmp_df = tmp_df.iloc[:-1]
-
-    # stay probabilities based on conditions
-    # 2 factors:
-    #       rewarded trail ( whether the reward in stage 2 is greater than )
-    #       common_transition ( whether the transition from stage 1 to stage 2 is common or rare)
-    results = tmp_df.groupby(['reward', 'common_transition'])[
-        'repeated_stepOneAction_next'].mean().reset_index()
-
-    # rename columns for clarity
-    results.rename(
-        columns={'repeated_stepOneAction_next': 'Stay Probability', 'reward': 'Rewarded',
-                 'common_transition': 'Common'}, inplace=True)
-
-    conditions = {
-        (True, True): 'rewarded_common',
-        (True, False): 'rewarded_rare',
-        (False, True): 'unrewarded_common',
-        (False, False): 'unrewarded_rare'
-    }
-    results['Condition'] = results.apply(
-        lambda row: conditions[(row['Rewarded'], row['Common'])], axis=1)
-
-    # rounding the stay probabilities
-    results['Stay Probability'] = results['Stay Probability'].apply(
-        lambda x: np.round(x, 3))
-
-    return results, tmp_df
-
-def print_simple_statistics(data: pd.DataFrame, full=False, title=""):
-    # print some statistics 
-    # print_simple_statistics(task_df)
-    task_df = data.copy()
-    print("###", title)
-
-    print("common transitions percentage:", np.mean(task_df["common_transition"])*100, "%")
-    print("rewarded trails percentage:", np.mean(task_df["reward"] > 0)*100, "%")
-
-    if full:
-        print("transition percentage from state 0 action 0 to state 1:", np.mean(task_df[task_df["stepOneChoice"] == 0]["state_transition_to"] == 1)*100, "%")
-        print("transition percentage from state 0 action 1 to state 2:", np.mean(task_df[task_df["stepOneChoice"] == 1]["state_transition_to"] == 2)*100, "%")
-        # get the counts of state transitions and action in stage 1
-        counts_stage_2_action_1 = pd.DataFrame({
-            'State Counts': task_df['state_transition_to'].value_counts(),
-            'Action Stage 1 Counts': task_df['stepOneChoice'].value_counts()
-        })
-        display(counts_stage_2_action_1)
-
-        mean_reward = task_df.groupby('state_transition_to')['reward'].mean().reset_index()
-        mean_reward.columns = ['state_transition_to', 'mean_reward']
-        display(mean_reward)
-
-        # get the reward probability distributions for the final stage (2)
-        def index_reward_probabilities(row):
-            try:
-                return row['rewardProbabilities'][row['state_transition_to'] + row['stepTwoChoice']]
-            except:
-                print(row)
-
-        task_df_tmp = task_df.copy()
-        task_df_tmp['mean_reward_prob_stepTwoChoice'] = task_df.apply(index_reward_probabilities, axis=1)
-        reward_probabilities = task_df_tmp.groupby(['state_transition_to', 'stepTwoChoice'])['mean_reward_prob_stepTwoChoice'].mean().reset_index()
-        display(reward_probabilities)
-
-def calculate_running_step_probabilities(data):
-    task_df = data.copy()
-    # Initialize columns for stay decisions and running probabilities
-    task_df['stay_decision'] = False
-    task_df['common_rewarded_prob'] = 0.0
-    task_df['common_unrewarded_prob'] = 0.0
-    task_df['rare_rewarded_prob'] = 0.0
-    task_df['rare_unrewarded_prob'] = 0.0
-
-    # Trackers for calculating running probabilities
-    stay_counts = {'common_rewarded': 0, 'common_unrewarded': 0, 'rare_rewarded': 0, 'rare_unrewarded': 0}
-    total_counts = {'common_rewarded': 0, 'common_unrewarded': 0, 'rare_rewarded': 0, 'rare_unrewarded': 0}
-
-    for i in range(1, len(task_df)):
-        current = task_df.iloc[i]
-        prev = task_df.iloc[i-1]
-
-        # Check if the participant stayed with the same choice
-        if current['stepOneChoice'] == prev['stepOneChoice']:
-            task_df.loc[i, 'stay_decision'] = True
-
-        condition = ('common_' if current['common_transition'] else 'rare_') + ('rewarded' if current['reward'] else 'unrewarded')
-
-        # Update counts
-        if task_df.loc[i, 'stay_decision']:
-            stay_counts[condition] += 1
-        total_counts[condition] += 1
-
-        # Calculate running probabilities
-        for key in stay_counts:
-            if total_counts[key] > 0:
-                task_df.loc[i, key + '_prob'] = stay_counts[key] / total_counts[key]
-
-    return task_df
 
 def softmax(arr, beta):
     e_x = np.exp(beta * (arr - np.max(arr)))  # subtract max value to prevent overflow
@@ -184,242 +109,3 @@ def calculate_aic(num_params, ll):
     :return:
     """
     return 2 * num_params - 2 * ll
-
-# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
-# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
-# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
-# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
-# plotting functions
-
-def plot_stay_probabilities(dfs: list[pd.DataFrame], title='', labels: list[str]=None, max_plots_per_row=4, save=False, filename="plots/stay_probabilities.png"):
-    sns.set_style("whitegrid")
-
-    if isinstance(dfs, pd.DataFrame) or not isinstance(dfs, list):
-        dfs = [dfs]  # Wrap the single DataFrame in a list
-    if labels is not None and not isinstance(labels, list):
-        labels = [labels]
-
-    n_plots = len(dfs)
-    # Calculate the number of rows and columns for the subplot grid
-    rows = (n_plots - 1) // max_plots_per_row + 1  # Ensure at least one row
-    cols = min(n_plots, max_plots_per_row)  # Max of 4 columns
-    
-    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(6*cols, 6*rows), sharey=True, sharex=True)
-    
-    # If there's only one subplot, axes won't be an array, so we wrap it in a list for consistency
-    if n_plots == 1:
-        axes = [axes]
-    else:
-        # Flatten the axes array to simplify indexing
-        axes = axes.flatten()
-
-    fig.suptitle(title)
-
-    if labels is None:
-        labels = [f"Plot {i}" for i in range(len(dfs))]
-    if len(labels) < len(dfs):
-        labels = labels + [f"Plot {i}" for i in range(len(dfs) - len(labels))]
-    
-    min_stay_prob = np.min([data['Stay Probability'].min() for data in dfs])
-    y_limit_min = 0.5 if min_stay_prob > 0.5 else min_stay_prob - 0.1
-
-    for i, data in enumerate(dfs):
-        ax = axes[i]
-        df = data.copy()
-        # Convert 'Rewarded' to a string type for clear plotting
-        df['Rewarded'] = df['Rewarded'].map({True: 'Rewarded', False: 'Unrewarded'})
-        df['Common'] = df['Common'].map({True: 'Common', False: 'Rare'})
-        # Create the bar plot
-        bar = sns.barplot(x='Rewarded', y='Stay Probability', hue='Common',
-                        data=df, ax=ax,
-                        order=['Rewarded', 'Unrewarded'],
-                        hue_order=['Common', 'Rare'])
-
-        # Set the y-axis limit
-        ax.set_ylim(y_limit_min, 1)
-
-        ax.set_title(labels[i], fontsize=20)
-
-        # Set the size of the legend and the title of the legend
-        ax.legend(title_fontsize='13', fontsize='12')
-
-        # Set the size of the x and y ticks labels
-        ax.tick_params(labelsize=12)
-
-        # Add percentages on top of each bar
-        for p in bar.patches:
-            bar.annotate(format(p.get_height(), '.2f'),
-                        (p.get_x() + p.get_width() / 2., p.get_height()),
-                        ha='center', va='center',
-                        xytext=(0, 10),
-                        textcoords='offset points', fontsize=12)
-            
-        if i >= (n_plots - max_plots_per_row):
-            ax.set_xlabel('Reward', fontsize=15)
-        else:
-            # Hide the x-axis label
-            ax.set_xlabel('', visible=False)
-        if i%max_plots_per_row == 0:
-            ax.set_ylabel('Stay Probability', fontsize=15)
-        else:
-            # Hide the y-axis label
-            ax.set_ylabel('', visible=False)
-
-    fig.tight_layout()
-    fig.subplots_adjust(top=0.9)
-    plt.show()
-    if save:
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        # add timestamp to filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = filename.replace('.png', f'_{timestamp}.png')
-        fig.savefig(filename)
-        print(f'Plot saved to {filename}')
-
-def calculate_and_plot_diffs(sampled_data_lists, model_titles=None, max_plots_per_row=3, save=False, filename='plots/stay_prob_diffs.png'):
-    n_plots = len(sampled_data_lists)
-    if model_titles is None:
-        model_titles = [f'Model {i}' for i in range(len(sampled_data_lists))]
-    if n_plots != len(model_titles):
-        raise ValueError('sampled_data_lists and model_titles must have the same length')
-    
-    # Initialize a dictionary to hold the mean differences for each model type
-    mean_diffs_all_models = {}
-    
-    # Iterate over each list of sampled data DataFrames and their corresponding title
-    for sampled_data, title in zip(sampled_data_lists, model_titles):
-        diffs = []
-        # Calculate differences for each DataFrame in the current list
-        for stay_prob_df in sampled_data:
-            diff = {}
-            rewarded_common = stay_prob_df.loc[(stay_prob_df['Rewarded']==True) & (stay_prob_df['Common']==True), 'Stay Probability'].values[0]
-            rewarded_rare = stay_prob_df.loc[(stay_prob_df['Rewarded']==True) & (stay_prob_df['Common']==False), 'Stay Probability'].values[0]
-            unrewarded_common = stay_prob_df.loc[(stay_prob_df['Rewarded']==False) & (stay_prob_df['Common']==True), 'Stay Probability'].values[0]
-            unrewarded_rare = stay_prob_df.loc[(stay_prob_df['Rewarded']==False) & (stay_prob_df['Common']==False), 'Stay Probability'].values[0]
-            diff['rewarded_common'] = rewarded_common
-            diff['diff_rewarded_rare'] = rewarded_rare - rewarded_common
-            diff['unrewarded_common'] = unrewarded_common
-            diff['diff_unrewarded_rare'] = unrewarded_rare - unrewarded_common
-            diff['diff_rewarded_unrewarded'] = diff['diff_rewarded_rare'] - diff['diff_unrewarded_rare']
-            diffs.append(diff)
-        
-        # Calculate mean differences for the current model type
-        mean_diffs = {key: np.mean([d[key] for d in diffs]) for key in diffs[0].keys()}
-        mean_diffs_all_models[title] = mean_diffs
-
-    rows = (n_plots - 1) // max_plots_per_row + 1  # Ensure at least one row
-    cols = min(n_plots, max_plots_per_row) 
-    # Plot the differences for each model type
-    fig, axes = plt.subplots(rows, cols, figsize=(5*cols, 5*rows), sharey=True)
-    if n_plots == 1:  # If there's only one model, ensure axes is iterable
-        axes = [axes]
-    axes = axes.flatten()
-
-    # plot the differences for each model
-    for ax, title in zip(axes, model_titles):
-        mean_diffs = mean_diffs_all_models[title]
-        # execlude the rewarded_common and unrewarded_common
-        mean_diffs.pop('rewarded_common', None)
-        mean_diffs.pop('unrewarded_common', None)
-        ax.bar(mean_diffs.keys(), mean_diffs.values())
-        ax.set_title(title)
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
-        ax.axhline(0, color='grey', linewidth=0.8)
-
-    plt.tight_layout()
-    plt.show()
-    if save:
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        # add timestamp to filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = filename.replace('.png', f'_{timestamp}.png')
-        fig.savefig(filename)
-        print(f'Plot saved to {filename}')
-
-def plot_running_step_probabilities(task_dfs:list, labels:list=None,window_size=1, max_plots_per_row=3, title='', save=False, filename="plots/running_step_probabilities.png"):
-    
-    if isinstance(task_dfs, pd.DataFrame) or not isinstance(task_dfs, list):
-        task_dfs = [task_dfs]
-    if labels is not None and not isinstance(labels, list):
-        labels = [labels]
-
-    # Create a copy of the DataFrame to avoid modifying the original
-    n_plots = len(task_dfs)
-    # Calculate the number of rows and columns for the subplot grid
-    rows = (n_plots - 1) // max_plots_per_row + 1  # Ensure at least one row
-    cols = min(n_plots, max_plots_per_row)  # Max of 4 columns
-    
-    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(6*cols, 6*rows), sharey=True, sharex=True)
-    
-    # If there's only one subplot, axes won't be an array, so we wrap it in a list for consistency
-    if n_plots == 1:
-        axes = [axes]
-    else:
-        # Flatten the axes array to simplify indexing
-        axes = axes.flatten()
-
-    fig.suptitle(title)
-
-    if labels is None:
-        labels = [f"Plot {i}" for i in range(len(task_dfs))]
-    if len(labels) < len(task_dfs):
-        labels = labels + [f"Plot {i}" for i in range(len(task_dfs) - len(labels))]
-    
-    for i, data in enumerate(task_dfs):
-        ax = axes[i]
-        df_copy = data.copy()
-
-        # Calculate moving averages on the copy
-        df_copy['common_rewarded_prob_ma'] = df_copy['common_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
-        df_copy['common_unrewarded_prob_ma'] = df_copy['common_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
-        df_copy['rare_rewarded_prob_ma'] = df_copy['rare_rewarded_prob'].rolling(window=window_size, min_periods=1).mean()
-        df_copy['rare_unrewarded_prob_ma'] = df_copy['rare_unrewarded_prob'].rolling(window=window_size, min_periods=1).mean()
-
-        # Plot each condition's moving average from the copied DataFrame
-        ax.plot(df_copy['trial_index'], df_copy['common_rewarded_prob_ma'], label='Common Rewarded (MA)', linestyle='-', color='b')
-        ax.plot(df_copy['trial_index'], df_copy['common_unrewarded_prob_ma'], label='Common Unrewarded (MA)', linestyle='--', color='b')
-        ax.plot(df_copy['trial_index'], df_copy['rare_rewarded_prob_ma'], label='Rare Rewarded (MA)', linestyle='-', color='orange')
-        ax.plot(df_copy['trial_index'], df_copy['rare_unrewarded_prob_ma'], label='Rare Unrewarded (MA)', linestyle='--', color='orange')
-
-        ax.set_title(labels[i])
-        ax.legend()
-        ax.grid(True)
-
-        if i >= (n_plots - max_plots_per_row):
-            ax.set_xlabel('Trial Index', fontsize=15)
-        else:
-            # Hide the x-axis label
-            ax.set_xlabel('', visible=False)
-        if i%max_plots_per_row == 0:
-            ax.set_ylabel('Running Stay Probability (MA)', fontsize=15)
-        else:
-            # Hide the y-axis label
-            ax.set_ylabel('', visible=False)
-
-    plt.show()
-    if save:
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        # add timestamp to filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = filename.replace('.png', f'_{timestamp}.png')
-        fig.savefig(filename)
-        print(f'Plot saved to {filename}')
-
-if __name__ == "__main__":
-    # test the function
-    # load and inspect some human data
-    file_names = ['experiment_data_mj.csv', 'experiment_data_andrei.csv', 
-                'experiment_data_SeEun.csv', 'experiment_data.csv', 'two_steps_experiment_data_muhip.csv']
-    stay_prob_list = []
-    human_data_list = [] 
-    for file_name in file_names:
-        file_name = os.path.join("data", "participants", file_name)
-        human_data = pd.read_csv(file_name)
-        human_data = preprocess_human_data(human_data)
-        human_data_list.append(human_data)
-        
-        stay_probability_h, _ = calculate_stay_probability(human_data)
-        stay_prob_list.append(stay_probability_h)
-
-    stay_prob_list_1 = stay_prob_list.copy()
-    calculate_and_plot_diffs([stay_prob_list, stay_prob_list_1], max_plots_per_row=3)

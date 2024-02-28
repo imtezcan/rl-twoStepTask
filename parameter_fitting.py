@@ -10,6 +10,7 @@ from scipy.optimize import minimize
 from scipy.stats import uniform
 from datetime import datetime
 import numpy as np
+import seaborn as sns
 import matplotlib.pyplot as plt
 import os
 import pandas as pd
@@ -35,24 +36,6 @@ def apply_choices(agent=None, stage_1=None, stage_2=None, recieved_reward=None):
     # state, action, reward, next_state, terminal
     agent.update_beliefs(state_1, action_1, 0, state_2, False)
     agent.update_beliefs(state_2, action_2, recieved_reward, state_2, True)
-
-def average_accumulated_reward(data):
-    return data['reward'].mean()
-
-def fit_to_average_accumulated_reward(parammeter_space: dict, agent_type='randome', seed=None, verbose=False):
-    param_names = [name for name in list(parammeter_space.keys())]
-    param_values = [values for values in list(parammeter_space.values())]
-    n1 = param_names[0]
-    n2 = param_names[1]
-    accumulated_reward_results = np.zeros((len(param_values[0]), len(param_values[1])))
-    for idx_1, p1 in enumerate(param_values[0]):
-        for idx_2, p2 in enumerate(param_values[1]):
-            param_dict = {n1: p1,
-                        n2: p2}
-            data, _ = simulate(agent_type=agent_type, seed=seed, params=param_dict)
-            accumulated_reward_results[idx_1, idx_2] = average_accumulated_reward(data)
-    return accumulated_reward_results
-
 
 def log_likelihood(agent, data, consider_both_stages=True, verbose=False, show_progress=False):
     LogLikelihood_sum = 0
@@ -97,6 +80,101 @@ def log_likelihood(agent, data, consider_both_stages=True, verbose=False, show_p
 
     return LogLikelihood_sum
 
+def fit_with_MCMC(parammeter_space: dict, data, agent_type, consider_both_stages=True, num_samples=1000, num_burn_in=1000,
+                    verbose=False, show_progress=False):
+    sampling_sd = 0.1
+    param_names = list(parammeter_space.keys())
+    param_bounds = [(np.min(parammeter_space[param]),np.max(parammeter_space[param])) for param in param_names]
+
+    def log_likelihood_function(params):
+        # create the parameter dictionary
+        params = dict(zip(param_names, params))
+        agent = create_agent(agent_type, params)
+        return log_likelihood(agent, data, consider_both_stages)
+    
+    samples = np.zeros((num_samples, len(param_names)))
+    initial_guess = [np.mean(bounds) for bounds in param_bounds] # initial guess varaiable to keep the code readable
+    current_params = np.array(initial_guess)
+    log_likelihood_values = []
+    for i in tqdm(range(num_samples + num_burn_in), desc='MCMC:', total=num_samples + num_burn_in, disable=not show_progress, leave=True):
+        # sample new parameters
+        new_params = np.random.normal(current_params, scale=sampling_sd, size=current_params.shape)
+        # bound the parameters to the parameter space
+        new_params = np.clip(new_params, [bound[0] for bound in param_bounds], [bound[1] for bound in param_bounds])
+        # calculate the log likelihood for the new parameters
+        log_likelihood_current = log_likelihood_function(current_params)
+        log_likelihood_new = log_likelihood_function(new_params)
+        # calculate the acceptance probability
+        accept_prob = np.exp(log_likelihood_new - log_likelihood_current)
+        # accept or reject the new parameters
+        if log_likelihood_new > log_likelihood_current or np.random.rand() < accept_prob:
+            current_params = new_params
+            if i >= num_burn_in:
+                log_likelihood_values.append(log_likelihood_new)
+        elif i >= num_burn_in:
+            log_likelihood_values.append(log_likelihood_current)
+        # store the parameters after the burn in period
+        if i >= num_burn_in:
+            samples[i - num_burn_in] = current_params
+    # Convert to DataFrame
+    results_df = pd.DataFrame(samples, columns=param_names)
+    results_df['log_likelihood'] = log_likelihood_values
+    # get the best parameters and the best LL
+    best_params, best_LL = get_best_params_and_ll(results_df)
+    return best_params, best_LL, results_df
+
+
+def fit_with_MCMC(parammeter_space, data, agent_type, consider_both_stages=True, num_samples=1000, num_burn_in=100, verbose=False, show_progress=False):
+    sampling_sd = 0.1
+    param_names = list(parammeter_space.keys())
+    param_bounds = [(np.min(parammeter_space[param]),np.max(parammeter_space[param])) for param in param_names]
+    initial_guess = [np.mean(bounds) for bounds in param_bounds]
+    # Define the log likelihood function
+    def log_likelihood_function(params):
+        params_dict = dict(zip(param_names, params))
+        agent = create_agent(agent_type, params_dict)
+        return log_likelihood(agent, data, consider_both_stages)
+    
+    # Initialize the sampling process
+    samples = np.zeros((num_samples, len(param_names)))
+    current_params = np.array([np.mean(bounds) for bounds in param_bounds])
+    log_likelihood_values = []
+    
+    for i in tqdm(range(num_samples + num_burn_in), desc='MCMC Sampling', disable=not show_progress):
+        # Propose new parameters
+        proposal_params = current_params + np.random.normal(0, sampling_sd, size=len(param_names))
+        
+        # Enforce parameter bounds
+        proposal_params = np.clip(proposal_params, [b[0] for b in param_bounds], [b[1] for b in param_bounds])
+        
+        # Calculate log likelihoods
+        log_likelihood_current = log_likelihood_function(current_params)
+        log_likelihood_proposal = log_likelihood_function(proposal_params)
+        
+        # Acceptance probability
+        accept_prob = np.exp(log_likelihood_proposal - log_likelihood_current)
+        
+        if log_likelihood_proposal > log_likelihood_current or np.random.rand() < accept_prob:
+            current_params = proposal_params
+            if i >= num_burn_in:
+                log_likelihood_values.append(log_likelihood_proposal)
+        elif i >= num_burn_in:
+            # If not accepted, repeat the current parameters' log likelihood
+            log_likelihood_values.append(log_likelihood_current)
+        
+        if i >= num_burn_in:
+            samples[i - num_burn_in] = current_params
+    
+    # Convert samples and log likelihoods to a DataFrame
+    results_df = pd.DataFrame(samples, columns=param_names)
+    results_df['log_likelihood'] = log_likelihood_values
+    
+    # Assuming get_best_params_and_ll extracts the best parameters and the highest log likelihood
+    best_params, best_LL = get_best_params_and_ll(results_df)
+    
+    return best_params, best_LL, results_df
+
+
 def fit_with_minimize(parammeter_space: dict, data, agent_type, consider_both_stages=True, num_initializations=10,
                     verbose=False, show_progress=False):
     param_names = list(parammeter_space.keys())
@@ -111,19 +189,24 @@ def fit_with_minimize(parammeter_space: dict, data, agent_type, consider_both_st
     # run the optimization multiple from different starting points and take the best result 
     best_LL = np.inf
     best_params = None
+    sampled_results = []
     for i in tqdm(range(num_initializations), desc='initializations:', total=num_initializations, disable=not show_progress, leave=True):
         if i == 0:
             initial_guess = [np.mean(bounds) for bounds in param_bounds]
         else:
             initial_guess = [np.random.uniform(low, high) for low, high in param_bounds]
         LL_result = minimize(objective_function, initial_guess, bounds=param_bounds)
+        sampled_results.append({**dict(zip(param_names, LL_result.x)), 'log_likelihood': -LL_result.fun})
         if LL_result.fun < best_LL:
             best_LL = LL_result.fun
             best_params = dict(zip(param_names, LL_result.x))
         if verbose:
             print(f'run: {i}, LL: {-LL_result.fun}, params: {dict(zip(param_names, LL_result.x))}')
             print('#'*50)
-    return best_params, -best_LL
+
+    # Convert to DataFrame
+    results_df = pd.DataFrame(sampled_results)
+    return best_params, -best_LL, results_df
 
 # LL_for_params_search_space
 def fit_with_grid_search(parammeter_space: dict, data, agent_type, consider_both_stages=True,
@@ -132,7 +215,7 @@ def fit_with_grid_search(parammeter_space: dict, data, agent_type, consider_both
     param_combinations = list(product(*parammeter_space.values()))
     LL_results = np.zeros(len(param_combinations))
     
-    for idx, param_vals in tqdm(enumerate(param_combinations), desc='grid_search:', total=len(param_combinations), disable=not show_progress, leave=False):
+    for idx, param_vals in tqdm(enumerate(param_combinations), desc='grid_search:', total=len(param_combinations), disable=not show_progress, leave=True):
         param_dict = dict(zip(param_names, param_vals))
         agent = create_agent(agent_type, param_dict)
         LL_results[idx] = log_likelihood(agent, data, consider_both_stages, verbose)
@@ -146,22 +229,26 @@ def fit_with_grid_search(parammeter_space: dict, data, agent_type, consider_both
     best_LL = LL_results[best_params_idx]
     return best_params, best_LL, LL_results
 
-def fit_with_random_search(param_distributions, data, agent_type, num_iterations=100,consider_both_stages=True, seed=0,
+def fit_with_random_search(param_space:dict, data, agent_type, num_iterations=100,consider_both_stages=True, seed=0,
                            verbose=False, show_progress=False):
+    # convert the parameter space to a format that can be used by ParameterSampler
+    # scipy.stats.uniform ->  (loc, loc + scale)
+    param_distribution = {param: uniform(np.min(param_space[param]), np.max(param_space[param]) - np.min(param_space[param]))
+                    for param in param_space.keys()}
     # Generate parameter samples
-    param_list = list(ParameterSampler(param_distributions, n_iter=num_iterations, random_state=seed))
+    param_list = list(ParameterSampler(param_distribution, n_iter=num_iterations, random_state=seed))
 
     # Initialize an empty list for the results
-    results_list = []
+    sampled_results = []
 
     # Evaluate log likelihood for sampled parameter sets
-    for params in tqdm(param_list, desc='random_search:', total=len(param_list), disable=not show_progress, leave=False):
+    for params in tqdm(param_list, desc='random_search:', total=len(param_list), disable=not show_progress, leave=True):
         agent = create_agent(agent_type, params)
         log_likelihood_value = log_likelihood(agent, data, consider_both_stages)
-        results_list.append({**params, 'log_likelihood': log_likelihood_value})
+        sampled_results.append({**params, 'log_likelihood': log_likelihood_value})
 
     # Convert to DataFrame
-    results_df = pd.DataFrame(results_list)
+    results_df = pd.DataFrame(sampled_results)
     # get the best parameters and the best LL
     best_params, best_LL = get_best_params_and_ll(results_df)
     return best_params, best_LL, results_df
@@ -187,6 +274,20 @@ def create_agent(agent_type, params):
     else:
         agent = RandomAgent(TwoStepEnv.action_space, TwoStepEnv.state_space, **params)
     return agent
+
+def fit_to_average_cumulative_reward(parammeter_space: dict, agent_type='randome', seed=None, verbose=False):
+    param_names = [name for name in list(parammeter_space.keys())]
+    param_values = [values for values in list(parammeter_space.values())]
+    n1 = param_names[0]
+    n2 = param_names[1]
+    accumulated_reward_results = np.zeros((len(param_values[0]), len(param_values[1])))
+    for idx_1, p1 in enumerate(param_values[0]):
+        for idx_2, p2 in enumerate(param_values[1]):
+            param_dict = {n1: p1,
+                        n2: p2}
+            data, _ = simulate(agent_type=agent_type, seed=seed, params=param_dict)
+            accumulated_reward_results[idx_1, idx_2] = data['reward'].mean()
+    return accumulated_reward_results
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 # ---------------------------------------------------------------------------------------------------------------------------------------------------------------

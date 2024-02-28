@@ -33,7 +33,7 @@ def param_recovery(agent_type:str, parameter_space:dict,  fit_type='grid_search'
         data, _ = simulate(agent_type, params=params, seed=seed)
         # fit the model to the data
         if fit_type == 'minimize_search':
-            best_params, best_LL = fit_with_minimize(parameter_space, data, agent_type=agent_type,
+            best_params, best_LL, fit_results = fit_with_minimize(parameter_space, data, agent_type=agent_type,
                                             consider_both_stages=kwargs.get('consider_both_stages', True),
                                             num_initializations=kwargs.get('num_iterations', 10),
                                             verbose=kwargs.get('verbose', False))

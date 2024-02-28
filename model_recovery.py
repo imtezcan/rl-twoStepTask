@@ -39,13 +39,14 @@ def model_recovery(models_priors:dict, num_simulations=10, seed=None, fit_func_k
                 # params = {param: dist.rvs() for param, dist in models_priors[true_model].items()}
             except AttributeError:
                 params = {param: np.random.uniform(np.min(dist), np.max(dist)) for param, dist in models_priors[true_model].items()}
-            simulated_data, _ = simulate(agent_type=true_model, params=params, seed=seed)
+            # simulated_data, _ = simulate(agent_type=true_model, params=params, seed=seed)
+            simulated_data, _ = simulate(agent_type=true_model, params=params)
             best_BIC = np.inf
             best_fit_model = None
             for model in models:
                 # fit the model and compute the BIC
                 params_range = all_params_range[model]
-                fitted_params, best_LL = fit_with_minimize(params_range, simulated_data, agent_type=model, **fit_func_kwargs)
+                fitted_params, best_LL, sampled_results_df = fit_with_minimize(params_range, simulated_data, agent_type=model, **fit_func_kwargs)
                 num_params = num_free_params[model]
                 num_data_points = len(simulated_data)
                 BIC = calculate_bic(num_params, num_data_points, best_LL)
