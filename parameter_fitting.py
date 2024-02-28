@@ -123,58 +123,6 @@ def fit_with_MCMC(parammeter_space: dict, data, agent_type, consider_both_stages
     best_params, best_LL = get_best_params_and_ll(results_df)
     return best_params, best_LL, results_df
 
-
-def fit_with_MCMC(parammeter_space, data, agent_type, consider_both_stages=True, num_samples=1000, num_burn_in=100, verbose=False, show_progress=False):
-    sampling_sd = 0.1
-    param_names = list(parammeter_space.keys())
-    param_bounds = [(np.min(parammeter_space[param]),np.max(parammeter_space[param])) for param in param_names]
-    initial_guess = [np.mean(bounds) for bounds in param_bounds]
-    # Define the log likelihood function
-    def log_likelihood_function(params):
-        params_dict = dict(zip(param_names, params))
-        agent = create_agent(agent_type, params_dict)
-        return log_likelihood(agent, data, consider_both_stages)
-    
-    # Initialize the sampling process
-    samples = np.zeros((num_samples, len(param_names)))
-    current_params = np.array([np.mean(bounds) for bounds in param_bounds])
-    log_likelihood_values = []
-    
-    for i in tqdm(range(num_samples + num_burn_in), desc='MCMC Sampling', disable=not show_progress):
-        # Propose new parameters
-        proposal_params = current_params + np.random.normal(0, sampling_sd, size=len(param_names))
-        
-        # Enforce parameter bounds
-        proposal_params = np.clip(proposal_params, [b[0] for b in param_bounds], [b[1] for b in param_bounds])
-        
-        # Calculate log likelihoods
-        log_likelihood_current = log_likelihood_function(current_params)
-        log_likelihood_proposal = log_likelihood_function(proposal_params)
-        
-        # Acceptance probability
-        accept_prob = np.exp(log_likelihood_proposal - log_likelihood_current)
-        
-        if log_likelihood_proposal > log_likelihood_current or np.random.rand() < accept_prob:
-            current_params = proposal_params
-            if i >= num_burn_in:
-                log_likelihood_values.append(log_likelihood_proposal)
-        elif i >= num_burn_in:
-            # If not accepted, repeat the current parameters' log likelihood
-            log_likelihood_values.append(log_likelihood_current)
-        
-        if i >= num_burn_in:
-            samples[i - num_burn_in] = current_params
-    
-    # Convert samples and log likelihoods to a DataFrame
-    results_df = pd.DataFrame(samples, columns=param_names)
-    results_df['log_likelihood'] = log_likelihood_values
-    
-    # Assuming get_best_params_and_ll extracts the best parameters and the highest log likelihood
-    best_params, best_LL = get_best_params_and_ll(results_df)
-    
-    return best_params, best_LL, results_df
-
-
 def fit_with_minimize(parammeter_space: dict, data, agent_type, consider_both_stages=True, num_initializations=10,
                     verbose=False, show_progress=False):
     param_names = list(parammeter_space.keys())
