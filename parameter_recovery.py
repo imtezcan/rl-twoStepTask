@@ -1,5 +1,5 @@
 from simulate import simulate
-from parameter_fitting import fit_with_minimize, fit_with_grid_search, fit_with_random_search, get_best_params_and_ll
+from parameter_fitting import fit_with_MCMC ,fit_with_minimize, fit_with_grid_search, fit_with_random_search, get_best_params_and_ll
 from scipy.stats import pearsonr
 import numpy as np
 import pandas as pd
@@ -13,17 +13,12 @@ from datetime import datetime
 # import the tqdm library combpatibilitle with jupyter notebook
 from tqdm.notebook import tqdm
 
-def param_recovery(agent_type:str, parameter_space:dict,  fit_type='grid_search', num_runs:int=20,
+def param_recovery(agent_type:str, parameter_space:dict,  fit_type='MCMC', num_runs:int=20,
                     seed:int=None, show_progress=True, **kwargs):
-    if fit_type == 'random_search':
-        # sample true parameters from the parameter space 
-        true_params = {param: parameter_space[param].rvs(size=num_runs) for param in parameter_space.keys()}
-    elif fit_type in ['grid_search', 'minimize_search']:
-        true_params = {param : np.random.uniform(np.min(parameter_space[param]), np.max(parameter_space[param]), num_runs)
+
+    true_params = {param : np.random.uniform(np.min(parameter_space[param]), np.max(parameter_space[param]), num_runs)
                     for param in parameter_space.keys()}
-    else:
-        raise ValueError(f'fit_type: {fit_type} not supported, use one of : "minimize_search", "random_search", "grid_search"')
-    
+
     # print('true params:',true_params)
     fitted_params = {param : [] for param in parameter_space.keys()}
     best_LLs = []
@@ -47,6 +42,12 @@ def param_recovery(agent_type:str, parameter_space:dict,  fit_type='grid_search'
             best_params, best_LL, fit_results = fit_with_grid_search(parameter_space, data, agent_type=agent_type,
                                                 consider_both_stages=kwargs.get('consider_both_stages', True),
                                                 verbose=kwargs.get('verbose', False))
+        elif fit_type == 'MCMC':
+            best_params, best_LL, fit_results = fit_with_MCMC(parameter_space, data, agent_type=agent_type,
+                                                              consider_both_stages=kwargs.get('consider_both_stages', True),
+                                                                num_samples=kwargs.get('num_samples', 900),
+                                                                num_burn_in=kwargs.get('num_burn_in', 100),
+                                                                verbose=kwargs.get('verbose', False))
         else:
             raise ValueError(f'fit_type: {fit_type} not supported, use one of : "minimize_search", "random_search", "grid_search"')
         

@@ -11,6 +11,31 @@ def random_walk_gaussian(prob, sd, min_prob=0, max_prob=1):
     new_prob = np.clip(new_prob, min_prob, max_prob)
     return new_prob
 
+def load_files_from_folder(folder_path, max_files=None, file_end='.csv'):
+    """
+    Load CSV files from a specified folder.
+
+    :param folder_path: Path to the folder containing CSV files.
+    :param max_files: Maximum number of CSV files to load. If None, all files are loaded.
+    :return: A list of pandas DataFrames.
+    """
+    csv_files = [f for f in os.listdir(folder_path) if f.endswith(file_end)]
+    
+    # Sort files alphabetically to ensure consistent order
+    csv_files.sort()
+    
+    # Limit the number of files to load, if max_files is specified
+    if max_files is not None:
+        csv_files = csv_files[:max_files]
+    
+    dataframes = []
+    for filename in csv_files:
+        file_path = os.path.join(folder_path, filename)
+        df = pd.read_csv(file_path)
+        dataframes.append(df)
+    
+    return dataframes
+
 # Load latest simulated data from csv
 def load_latest_simulated_data(agent_type):
     data_folder = os.path.join("data", "simulated", agent_type)
