@@ -600,7 +600,7 @@ def plot_stay_prob_paired_diffs(mean_diffs_all_models, model_titles, max_plots_p
     # Plot the differences for each model type
     fig, axes = plt.subplots(rows, cols, figsize=(5*cols, 5*rows), sharey=True)
     if n_plots == 1:  # If there's only one model, ensure axes is iterable
-        axes = [axes]
+        axes = np.array([axes])
     axes = axes.flatten()
 
     # plot the differences for each model
